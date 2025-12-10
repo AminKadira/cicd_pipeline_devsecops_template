@@ -1,0 +1,32 @@
+{
+  "project": {
+    "name": "spf-invoice-service",
+    "version": "1.0.0",
+    "team": "qa-team"
+  },
+  "repositories": {
+    "tests": {
+      "url": "git@gitlab.fr.pluxee.tools:amin.kadira.ext/qa_integration_piplinesec_poc.git",
+      "branch": "main"
+    }
+  },
+  "security": {
+    "enableOwasp": true,
+    "secretScanEnabled": true,
+    "dependencyCheckEnabled": true,
+    "sastEnabled": true
+  },
+  "testing": {
+    "playwright": {
+      "browsers": ["chromium"],
+      "workers": 1,
+      "retries": 1
+    }
+  },
+  "notifications": {
+    "teams": {
+      "enabled": false,
+      "webhook": ""
+    }
+  }
+}

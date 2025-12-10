@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .header { background-color: #007bff; color: white; padding: 20px ; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; }
+        .content { padding: 30px; }
+        .info-block { background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 15px; margin: 15px 0; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef; }
+        .info-row:last-child { border-bottom: none; }
+        .label { font-weight: bold; color: #495057; }
+        .value { color: #212529; }
+        .stages { margin: 20px 0; }
+        .stage { padding: 10px; margin: 5px 0; background-color: #f8f9fa; border-radius: 4px; }
+        .stage.success { border-left: 4px solid #36a64f; }
+        .stage.failure { border-left: 4px solid #dc3545; }
+        .stage.skipped { border-left: 4px solid #6c757d; }
+        .footer { background-color: #f8f9fa; padding: 15px; text-align: center; color: #6c757d; font-size: 12px; }
+        .button { display: inline-block; padding: 12px 24px; background-color: #007bff; color: white; text-decoration: none; border-radius: 4px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{STATUS_EMOJI}} Pipeline {{STATUS_LABEL}}</h1>
+        </div>
+        
+        <div class="content">
+            <div class="info-block">
+                <div class="info-row">
+                    <span class="label">Project:</span>
+                    <span class="value">{{PROJECT_NAME}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Build:</span>
+                    <span class="value">#{{BUILD_NUMBER}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Status:</span>
+                    <span class="value" style="color: #007bff; font-weight: bold;">{{STATUS_LABEL}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Duration:</span>
+                    <span class="value">{{DURATION}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Environment:</span>
+                    <span class="value">{{ENVIRONMENT}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Commit:</span>
+                    <span class="value">{{COMMIT_HASH}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Branch:</span>
+                    <span class="value">{{BRANCH}}</span>
+                </div>
+            </div>
+            
+            <h3>Security Summary</h3>
+            <div class="stages">
+                <div class="stage {{SECURITY_VALIDATION_CLASS}}">
+                    Security Validation: {{SECURITY_VALIDATION_STATUS}}
+                </div>
+                <div class="stage {{DEPENDENCY_SCAN_CLASS}}">
+                    OWASP Dependency Scan: {{DEPENDENCY_SCAN_STATUS}}
+                </div>
+                <div class="stage {{SAST_ANALYSIS_CLASS}}">
+                    SAST Analysis: {{SAST_ANALYSIS_STATUS}}
+                </div>
+                <div class="stage {{SECURE_TESTING_CLASS}}">
+                    Secure Testing: {{SECURE_TESTING_STATUS}}
+                </div>
+                <div class="stage {{BUILD_SIGNING_CLASS}}">
+                    Artifact Signing: {{BUILD_SIGNING_STATUS}}
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="{{BUILD_URL}}" class="button">View Build Details</a>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>DevSecOps Pipeline - SPF Invoice Service</p>
+            <p>Executed at {{TIMESTAMP}} UTC</p>
+        </div>
+    </div>
+</body>
+</html>

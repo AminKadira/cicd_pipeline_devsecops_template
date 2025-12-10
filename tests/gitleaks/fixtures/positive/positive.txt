@@ -1,0 +1,11 @@
+# Doit être détecté par Gitleaks
+GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyzABCD123456
+aws_access_key_id=AKIAABCDEFGHIJKLMNOP
+password = "SuperSecret123!"
+service_token = "spf_1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"
+api_key = "thisIsAGenericApiKey_with-dashes_1234567890"
+ConnectionString="Server=sql.example;User Id=sa;Password=TopSecretPwd!;"
+Authorization: Bearer eyJabcde12345.abcde12345.abcde12345
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASC
+-----END PRIVATE KEY-----

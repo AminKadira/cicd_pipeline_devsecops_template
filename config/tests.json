@@ -1,0 +1,29 @@
+{
+    "playwright": {
+        "timeout": 30000,
+        "retries": 2,
+        "browsers": ["chromium"],
+        "workers": 1,
+        "reporter": "html"
+    },
+    "environments": {
+        "test": {
+            "baseURL": "http://:8080",
+            "apiURL": "http://:8080/api",
+            "parallelTests": false
+        },
+        "staging": {
+            "baseURL": "http://:8080",
+            "apiURL": "http://:8080/api",
+            "parallelTests": true
+        }
+    },
+    "sanitization": {
+        "patterns": [
+            "password=[^&]*",
+            "\"token\":\"[^\"]*\"",
+            "authorization: bearer [^\\s]*",
+            "api[_-]?key[\"':\\s]*[=:]\\s*[\"'][^\"']*[\"']"
+        ]
+    }
+}

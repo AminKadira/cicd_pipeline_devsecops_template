@@ -1,0 +1,93 @@
+# --- OS / Editeurs ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+Desktop.ini
+ehthumbs.db
+.history/
+
+# --- Logs & temporaires ---
+logs/
+*.log
+*.log.*
+tmp/
+temp/
+*.tmp
+
+# --- Variables d'environnement ---
+.env
+# ---.env.*
+
+# --- Node / JS / Playwright ---
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# --- .NET ---
+bin/
+obj/
+.vs/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.sarif
+*.code-workspace
+
+# --- NuGet / Packages ---
+packages/
+.nuget/packages/
+*.nupkg
+*.snupkg
+
+# --- Sonar / Analyse ---
+.scannerwork/
+.sonar/
+.sonarqube/
+
+# --- Outils Sécurité (OWASP DC, Gitleaks, SAST/DAST) ---
+dependency-check-data/
+dependency-check-report.*
+odc-reports/
+owasp-report/
+**/owasp-report/*
+gitleaks-report.*
+gitleaks.log
+.gitleaks/
+gitleaks-cache/
+
+# --- Rapports générés ---
+/reports/
+coverage-*
+*.html
+!templates/html/**
+!templates/**
+
+# --- Archives ---
+#*.zip
+*.tar
+*.tar.gz
+
+# --- Dossier de brouillons ---
+/_draft/
+
+
+*.properties

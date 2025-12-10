@@ -1,0 +1,21 @@
+{
+  "dependencyCheck": {
+    "failOnCvss": 7.0,
+    "formats": ["HTML", "JSON"],
+    "suppressionFile": "config/suppression.xml"
+  },
+  "sast": {
+    "tools": ["sonarqube", "semgrep"],
+    "failOnHigh": true,
+    "excludePaths": ["node_modules", "test-results"]
+  },
+  "secretScanning": {
+    "patterns": ["password", "api_key", "secret", "token"],
+    "excludeFiles": ["*.test.js", "*.spec.ts"]
+  },
+  "configSecurity": {
+    "checkHttps": true,
+    "validateCors": true,
+    "checkHeaders": true
+  }
+}

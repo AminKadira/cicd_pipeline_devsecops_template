@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+    <!-- 
+    Template pour supprimer faux positifs
+
+    Exemple 1: Supprimer CVE spécifique pour un package
+    -->
+    <suppress>
+        <notes><![CDATA[
+        False positive - Package not used in production context
+        Reviewed: 2025-10-02
+        ]]></notes>
+        <packageUrl regex="true">^pkg:nuget/System\.Text\.Json@.*$</packageUrl>
+        <cve>CVE-2021-26701</cve>
+    </suppress>
+
+    <!--
+    Exemple 2: Supprimer toutes CVE pour version spécifique (temporaire)
+    Ajout de <cvssBelow> pour satisfaire le schéma et neutraliser toutes les vulnérabilités
+    sur ce package/version jusqu'à la date donnée.
+    -->
+    <suppress>
+        <notes><![CDATA[
+        Known issue, update scheduled for Q1 2026
+        Mitigation: Input validation implemented
+        ]]></notes>
+        <packageUrl regex="true">^pkg:nuget/Newtonsoft\.Json@12\.0\.3$</packageUrl>
+        <!-- Tous les CVSS <= 10 seront supprimés ; 11.0 assure "toutes" les CVE -->
+        <cvssBelow>10.0</cvssBelow>
+        <!-- Mettre une date butoir pour limiter la suppression -->
+        <until>2026-03-31Z</until>
+    </suppress>
+
+    <!--
+    Exemple 3: Supprimer par CPE (Common Platform Enumeration)
+    -->
+    <suppress>
+        <notes><![CDATA[
+        Development dependency only, not deployed
+        ]]></notes>
+        <cpe>cpe:/a:microsoft:asp.net_core:5.0.0</cpe>
+    </suppress>
+
+</suppressions>

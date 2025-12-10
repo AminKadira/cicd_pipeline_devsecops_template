@@ -1,0 +1,23 @@
+{
+    "project": {
+        "name": "SPF Invoice Service",
+        "gitUrl": "git@gitlab.fr.pluxee.tools:cicd/spf.customer.service.cicd.git",
+        "gitBranch": "develop",
+        "gitCredentials": "git-ssh-key"
+    },
+    "build": {
+        "scriptPath": "D:\\_puppet\\script\\buildDotNetCore3.1.ps1",
+        "proxyServer": "proxy.fr.pluxee.tools",
+        "proxyPort": "3128",
+        "apis": [
+            "SPF.Customer.Service.Presentation.Api"
+        ]
+    },
+    "security": {
+        "dependencyScan": {
+            "enabled": true,
+            "failOnCritical": true,
+            "failOnHigh": true
+        }
+    }
+}

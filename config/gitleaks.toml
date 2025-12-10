@@ -1,0 +1,156 @@
+# GitLeaks Configuration - SPF Projects
+# Documentation: https://github.com/gitleaks/gitleaks
+
+title = "GitLeaks Security Scan - SPF Invoice Service"
+
+[extend]
+# Utiliser les règles par défaut de GitLeaks
+useDefault = true
+
+# ============================================================
+# RÈGLES PERSONNALISÉES SPF/PLUXEE
+# ============================================================
+
+[[rules]]
+id = "pluxee-api-key"
+description = "Pluxee API Key Pattern"
+regex = '''(?i)(plx|pluxee)[_-]?(api)?[_-]?key['":\s]*[=:]\s*['"][a-zA-Z0-9]{32,}['"]'''
+tags = ["api-key", "pluxee", "secret"]
+
+[[rules]]
+id = "spf-service-token"
+description = "SPF Service Token"
+regex = '''spf_[a-zA-Z0-9]{40,}'''
+tags = ["token", "spf", "service"]
+
+[[rules]]
+id = "connection-string-sqlserver"
+description = "SQL Server Connection String"
+regex = '''(?i)(server|data source)=[^;]+;.*(user id|uid)=[^;]+;.*(password|pwd)=[^;]+'''
+tags = ["database", "sql-server", "credentials"]
+
+[[rules]]
+id = "azure-storage-account-key"
+description = "Azure Storage Account Key"
+regex = '''DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=[A-Za-z0-9+/=]{86,88}'''
+tags = ["azure", "storage", "cloud"]
+
+[[rules]]
+id = "jwt-token"
+description = "JWT Token"
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'''
+tags = ["jwt", "token", "auth"]
+
+[[rules]]
+id = "api-key-generic"
+description = "Generic API Key Pattern"
+regex = '''(?i)(api[_-]?key|apikey|api_secret)['":\s]*[=:]\s*['"][a-zA-Z0-9_\-]{20,}['"]'''
+tags = ["api-key", "secret"]
+
+[[rules]]
+id = "password-assignment"
+description = "Password in Code"
+regex = '''(?i)(password|passwd|pwd)['":\s]*[=:]\s*['"][^'"]{8,}['"]'''
+tags = ["password", "credentials"]
+
+[[rules]]
+id = "private-key-rsa"
+description = "RSA Private Key"
+regex = '''-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'''
+tags = ["private-key", "ssh", "certificate"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''(?i)AKIA[0-9A-Z]{16}'''
+tags = ["aws", "access-key", "cloud"]
+
+[[rules]]
+id = "github-token"
+description = "GitHub Personal Access Token"
+regex = '''ghp_[0-9a-zA-Z]{36}'''
+tags = ["github", "token", "git"]
+
+[[rules]]
+id = "slack-webhook"
+description = "Slack Webhook URL"
+regex = '''https://hooks\.slack\.com/services/[A-Za-z0-9+/]{44,}'''
+tags = ["slack", "webhook", "integration"]
+
+[[rules]]
+id = "bearer-token"
+description = "Bearer Token in Headers"
+regex = '''(?i)authorization['":\s]*[=:]\s*['"]?bearer\s+[a-zA-Z0-9_\-\.=]+['"]?'''
+tags = ["bearer", "token", "auth"]
+
+# ============================================================
+# ALLOWLIST (Exceptions - Faux Positifs)
+# ============================================================
+
+[allowlist]
+description = "Allowlist for known false positives"
+
+# Chemins à ignorer
+paths = [
+    # Build artifacts
+    '''node_modules/''',
+    '''bin/''',
+    '''obj/''',
+    '''packages/''',
+    '''\.nuget/''',
+    
+    # Git internals
+    '''\.git/''',
+    
+    # Test data
+    '''tests/fixtures/''',
+    '''test-data/''',
+    
+    # Documentation
+    '''docs/examples/''',
+    
+    # Distribution
+    '''dist/''',
+    '''build/''',
+    '''target/''',
+    
+    # IDE
+    '''\.vs/''',
+    '''\.idea/''',
+    '''\.vscode/'''
+]
+
+# Patterns à ignorer (exemples, tests, dummy data)
+regexes = [
+    # Exemples de documentation
+    '''example\.com''',
+    '''sample\.com''',
+    '''test\.local''',
+    '''localhost''',
+    '''127\.0\.0\.1''',
+    
+    # Dummy credentials
+    '''test-api-key''',
+    '''dummy-password''',
+    '''fake-secret''',
+    '''example-token''',
+    '''your-api-key-here''',
+    '''YOUR_PASSWORD_HERE''',
+    
+    # Template variables
+    '''\$\{[A-Z_]+\}''',
+    '''\{\{[A-Z_]+\}\}''',
+    '''<[A-Z_]+>''',
+    
+    # Base64 images (data URLs)
+    '''data:image/[^;]+;base64'''
+]
+
+# Commits spécifiques à ignorer (si besoin)
+commits = []
+
+# Fichiers spécifiques à ignorer
+# files = [
+#     '''.*\.min\.js$''',
+#     '''.*\.min\.css$'''
+# ]
