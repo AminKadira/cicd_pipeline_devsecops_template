@@ -16,7 +16,7 @@ $environment = $env:ENVIRONMENT
 if (-not $environment) {
     throw "ENVIRONMENT variable not set. Ensure it's defined in Jenkins pipeline parameters."
 }
-#endregion
+#endregion 
 
 #region Load Configuration
 try {
@@ -53,12 +53,17 @@ $projectEnv = $projectConfig.project.environments |
     Select-Object -First 1
 
 $jenkinsAgent = ""
+if ($projectConfig.project.jenkinsAgent) {
+    $jenkinsAgent = $projectConfig.project.jenkinsAgent
+}
+if ($projectEnv -and $projectEnv.jenkinsAgent) {
+    # l'agent défini au niveau environnement écrase la valeur projet
+    $jenkinsAgent = $projectEnv.jenkinsAgent
+}
+
 if ($projectEnv -and $projectEnv.targetServers -and $projectEnv.targetServers.Count -gt 0) {
     $servers = $projectEnv.targetServers
     $deployEnabled = $true
-    if ($projectEnv.jenkinsAgent) {
-        $jenkinsAgent = $projectEnv.jenkinsAgent
-    }
 } else {
     $servers = @()
     $deployEnabled = $false

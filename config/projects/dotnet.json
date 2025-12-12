@@ -6,11 +6,11 @@
         "gitUrl": "git@gitlab.fr.pluxee.tools:core_module/dotnet.git",
         "gitBranch": "release/cicd",
         "gitCredentials": "git-ssh-key",
+        "jenkinsAgent": "plxfrsr-l1pi027",
         "environments": [
             {
                 "name": "tst",
                 "displayName": "Test",
-                "jenkinsAgent": "plxfrsr-l1pi027",
                 "targetServers": [
                     "plxfrsr-l2ta015"
                 ]
@@ -18,7 +18,6 @@
             {
                 "name": "sta",
                 "displayName": "Staging",
-                "jenkinsAgent": "plxfrsr-l1pi027",
                 "targetServers": [
                     "plxfrsr-l1sac91",
                     "plxfrsr-l1sac92",
@@ -29,7 +28,6 @@
             {
                 "name": "prd",
                 "displayName": "Production",
-                "jenkinsAgent": "plxfrsr-l1pi027",
                 "targetServers": [
                     "plxfrsr-l1pab41",
                     "plxfrsr-l1pab42",

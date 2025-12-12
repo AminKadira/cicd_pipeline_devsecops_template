@@ -1,8 +1,6 @@
 pipeline {
     
-    agent {
-        label params.EXECUTION_LABEL
-    }
+    agent none
     
     triggers {
         //pollSCM('H/5 * * * *')  // Vérifie develop toutes les 5 minutes
@@ -36,6 +34,7 @@ pipeline {
          
     stages {
         stage('Identify Trigger Repository') {
+            agent { label params.EXECUTION_LABEL }
             steps {
                 script {
                     echo "======================================================"
@@ -75,34 +74,42 @@ pipeline {
         }
         
         stage('Load Configuration') {
+            agent { label params.EXECUTION_LABEL }
             steps {
                 script {
                     echo "======================================================"
                     echo "LOADING PIPELINE CONFIGURATION"
                     echo "======================================================"
                     
-                    
+                    def projectKey = (env.TRIGGER_REPO_NAME ?: '').replaceAll(/\\.git$/, '')
+                    if (!projectKey?.trim()) {
+                        error "Project key derived from trigger repo is empty"
+                    }
 
                     // Appeler PowerShell pour parser JSON
                     def configOutput = bat(
                         returnStdout: true,
-                        script: "@powershell -ExecutionPolicy Bypass -File scripts\\utils\\parse-config.ps1 -environment ${params.ENVIRONMENT}"
+                        script: "@powershell -ExecutionPolicy Bypass -File scripts\\utils\\parse-config.ps1 -projectKey ${projectKey}"
                     ).trim()
                     
                     // Parser les lignes KEY=VALUE
-                    configOutput.split('\n').each { line ->
+                    configOutput.split('\\n').each { line ->
                         def parts = line.trim().split('=', 2)
                         if (parts.size() == 2) {
                             env."${parts[0]}" = parts[1]
                         }
                     }
                     
+                    // Agent cible : jenkinsAgent du projet, fallback param
+                    env.PIPELINE_AGENT_LABEL = env.JENKINS_AGENT_LABEL ?: params.EXECUTION_LABEL
+                    
                     echo "======================================================"
                     echo "CONFIGURATION LOADED SUCCESSFULLY"
                     echo "======================================================"
                     echo ""
                     echo "PIPELINE PARAMETERS:"
-                    echo "  - Agent: ${params.EXECUTION_LABEL}"
+                    echo "  - Agent (param): ${params.EXECUTION_LABEL}"
+                    echo "  - Agent (config): ${env.PIPELINE_AGENT_LABEL}"
                     echo "  - Environment: ${params.ENVIRONMENT}"
                     echo "  - Trigger Repo: ${env.TRIGGER_REPO_NAME} (${env.TRIGGER_REPO_URL})"
                     echo "  - Build Number: ${BUILD_NUMBER}"
@@ -139,6 +146,7 @@ pipeline {
         }
         
         stage('Checkout Project') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             steps {
                 echo "======================================================"
                 echo "CHECKING OUT PROJECT: ${env.PROJECT_NAME}"
@@ -162,6 +170,7 @@ pipeline {
         }
 
         stage('Secret Scanning - GitLeaks') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -252,6 +261,7 @@ pipeline {
         }   
 
         stage('Security - Dependency Scan') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -350,6 +360,7 @@ pipeline {
         }
 
         stage('SCA - OWASP Dependency Check') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -507,6 +518,7 @@ pipeline {
         }
 
         stage('SAST- SonarQube ') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { env.SECURITY_SCAN_ENABLED == 'true' }
             }
@@ -564,6 +576,7 @@ pipeline {
         }
 
         stage('DAST - OWASP ZAP') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { env.SECURITY_SCAN_ENABLED == 'true' }
             }
@@ -577,6 +590,7 @@ pipeline {
         }
 
         stage('Build') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { env.SECURITY_SCAN_ENABLED == 'true' }
             }
@@ -621,6 +635,7 @@ pipeline {
         }
       
         stage('Deploy to TEST') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'test' }
             }
@@ -705,6 +720,7 @@ pipeline {
         // ================================================================
         
         stage('Health Check') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { 
             //         env.DEPLOY_ENABLED == 'true' && 
@@ -721,6 +737,7 @@ pipeline {
         }
         
         stage('Functional Tests') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { 
             //         env.DEPLOY_ENABLED == 'true' && 
@@ -738,6 +755,7 @@ pipeline {
     
 
         stage('Approval for STAGING') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'staging' }
             }
@@ -755,6 +773,7 @@ pipeline {
         }
 
         stage('Deploy to STAGING') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'staging' }
             }
@@ -838,6 +857,7 @@ pipeline {
         // STAGE 8: Audit Sécurité
         // ================================================================
         stage('Security Audit') {
+            agent { label env.PIPELINE_AGENT_LABEL }
             steps {
                 script {
                     echo "======================================================"
