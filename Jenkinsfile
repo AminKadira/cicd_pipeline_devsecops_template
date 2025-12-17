@@ -1,7 +1,8 @@
 pipeline {
-    
-    agent none
-    
+    agent {
+        label params.EXECUTION_LABEL
+    }
+
     triggers {
         //pollSCM('H/5 * * * *')  // Vérifie develop toutes les 5 minutes
         githubPush()  // Trigger GitHub
@@ -12,7 +13,7 @@ pipeline {
         string(
             name: 'EXECUTION_LABEL',
             defaultValue: 'plxfrsr-l1pi027',
-            description: 'Jenkins agent label'
+            description: 'Jenkins agents label'
         )
         choice(
             name: 'ENVIRONMENT',
@@ -25,16 +26,14 @@ pipeline {
          password(name: 'NVD_API_KEY', defaultValue: '', description: 'NVD API key (optionnelle)')
 
     }
-    
-    environment {
-        BUILD_TIMESTAMP = new Date().format('yyyy-MM-dd HH:mm:ss')   
-        sonar_token = 'sqa_64305d1b5c454d72b0fac2ab879c27527e17b1bd'
 
+    environment {
+        BUILD_TIMESTAMP = new Date().format('yyyy-MM-dd HH:mm:ss')
     }
          
     stages {
         stage('Identify Trigger Repository') {
-            agent { label params.EXECUTION_LABEL }
+            // // agent { label params.EXECUTION_LABEL }
             steps {
                 script {
                     echo "======================================================"
@@ -74,16 +73,19 @@ pipeline {
         }
         
         stage('Load Configuration') {
-            agent { label params.EXECUTION_LABEL }
+           //  // agent { label params.EXECUTION_LABEL }
             steps {
                 script {
                     echo "======================================================"
                     echo "LOADING PIPELINE CONFIGURATION"
                     echo "======================================================"
                     
-                    def projectKey = (env.TRIGGER_REPO_NAME ?: '').replaceAll(/\\.git$/, '')
+                    // Nettoyer le nom du projet (enlever .git de manière robuste)
+                    def projectKey = (env.TRIGGER_REPO_NAME ?: '').replaceAll(/\\.git$/, '').replaceAll(/\\.git\\./, '.').trim()
                     if (!projectKey?.trim()) {
                         error "Project key derived from trigger repo is empty"
+                    }else{
+                        
                     }
 
                     // Appeler PowerShell pour parser JSON
@@ -146,7 +148,7 @@ pipeline {
         }
         
         stage('Checkout Project') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+            // // agent { label env.PIPELINE_AGENT_LABEL }
             steps {
                 echo "======================================================"
                 echo "CHECKING OUT PROJECT: ${env.PROJECT_NAME}"
@@ -170,7 +172,7 @@ pipeline {
         }
 
         stage('Secret Scanning - GitLeaks') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -261,7 +263,7 @@ pipeline {
         }   
 
         stage('Security - Dependency Scan') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -360,7 +362,7 @@ pipeline {
         }
 
         stage('SCA - OWASP Dependency Check') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -516,81 +518,187 @@ pipeline {
                 }
             }
         }
-
+     
         stage('SAST- SonarQube ') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            when {
-                expression { env.SECURITY_SCAN_ENABLED == 'true' }
-            }
-              // info: steps to run during the stage
+             agent { label 'plxfrsr-l1pi008' }
+            // when {
+            //     // expression { 
+            //     //     env.SECURITY_SCAN_ENABLED == 'true'
+            //     // }
+            // }
             steps {
-                echo "======================================================"
-                echo "SAST- SonarQube"
-                echo "======================================================"
-
-                // info: update the stage status on gitlab to follow the jenkins pipeline
                 updateGitlabCommitStatus name: 'SonarQube Analysis', state: 'running'
-                // info: update the gitlab stage status from the jenkins stage
                 gitlabCommitStatus(name: 'SonarQube Analysis') {
-                    // info: use scripted pipeline in the declarative pipeline used here
                     script {
-                        status = powershell(returnStatus: true, script: '''
-                            Get-ChildItem -Recurse -Filter '*.coverage' | Foreach-Object {
-                                $outfile = "$([System.IO.Path]::GetFileNameWithoutExtension($_.FullName)).coveragexml"
-                                $output = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($_.FullName), $outfile)
-                                & $env:CodeCoveragePath\\CodeCoverage.exe analyze /output:$output $_.FullName
+                        echo "======================================================"
+                        echo "SAST ANALYSIS WITH SONARQUBE"
+                        echo "======================================================"
+                        
+                        // Validation du token SonarQube
+                        if (!env.sonar_token?.trim()) {
+                            error "SonarQube token (sonar_token) is not defined. Please configure it in Jenkins credentials or environment variables."
+                        }
+                        
+                        dir('project') {
+                            // ================================================================
+                            // DIAGNOSTIC DES VARIABLES GITLAB
+                            // ================================================================
+                            echo "GitLab Environment Variables Diagnostic:"
+                            echo "  - gitlabMergeRequestIid: ${env.gitlabMergeRequestIid ?: 'NOT SET (not a MR context)'}"
+                            echo "  - gitlabBranch: ${env.gitlabBranch ?: 'NOT SET'}"
+                            echo "  - gitlabTargetBranch: ${env.gitlabTargetBranch ?: 'NOT SET'}"
+                            echo "  - gitlabSourceBranch: ${env.gitlabSourceBranch ?: 'NOT SET'}"
+                            echo "  - gitlabActionType: ${env.gitlabActionType ?: 'NOT SET'}"
+                            echo "  - gitlabUserName: ${env.gitlabUserName ?: 'NOT SET'}"
+                            echo "  - gitlabMergeRequestTitle: ${env.gitlabMergeRequestTitle ?: 'NOT SET'}"
+                            echo ""
+                            
+                            // Déterminer si on est dans un contexte de Merge Request
+                            // gitlabMergeRequestIid est défini uniquement lors d'un trigger MR
+                            def gitlabMergeRequestIid = env.gitlabMergeRequestIid?.trim() ?: ''
+                            
+                            // gitlabBranch peut être défini par le plugin GitLab ou utiliser PROJECT_GIT_BRANCH
+                            def gitlabBranch = env.gitlabBranch?.trim() ?: 
+                                              env.gitlabSourceBranch?.trim() ?: 
+                                              env.PROJECT_GIT_BRANCH?.trim() ?: 
+                                              ''
+                            
+                            // gitlabTargetBranch est défini uniquement en contexte MR
+                            def gitlabTargetBranch = env.gitlabTargetBranch?.trim() ?: 'develop'
+                            
+                            // Construire la clé SonarQube à partir du nom du projet
+                            // Format: BRS.FR.<PROJECT_NAME>
+                            def slnName = env.PROJECT_NAME?.replaceAll(/\\.git$/, '')?.replaceAll(/[^a-zA-Z0-9.]/, '') ?: 'Unknown'
+                            env.sonar_key = "BRS.FR.${slnName}"
+                            
+                            echo "SonarQube Configuration:"
+                            echo "  - Project Key: ${env.sonar_key}"
+                            echo "  - Branch: ${gitlabBranch}"
+                            echo "  - Merge Request IID: ${gitlabMergeRequestIid ?: 'N/A (Branch mode)'}"
+                            echo "  - Target Branch: ${gitlabTargetBranch}"
+                            echo "  - Analysis Mode: ${gitlabMergeRequestIid ? 'Pull Request' : 'Branch Analysis'}"
+                            echo ""
+                            
+                            // Phase BEGIN - Configuration SonarQube
+                            echo "======================================================"
+                            echo "SONARQUBE: PHASE BEGIN"
+                            echo "======================================================"
+                            
+                            def sonarBeginStatus = 0
+                            
+                            if (gitlabMergeRequestIid) {
+                                // Mode Pull Request
+                                echo "Mode: Pull Request Analysis"
+                                sonarBeginStatus = powershell(returnStatus: true, script: """
+                                    dotnet C:\\Users\\jenkins\\.dotnet\\tools\\.store\\dotnet-sonarscanner\\6.2.0\\dotnet-sonarscanner\\6.2.0\\tools\\netcoreapp3.1\\any\\SonarScanner.MSBuild.dll begin `
+                                    /k:"${env.sonar_key}" `
+                                    /d:sonar.exclusions="**/*.html,**tests/**/*.*,**clients/**/*.*,**/*.json,**/*.sql,**/*Extensions.cs,**/Configurations/**,**/Endpoints/**,**/*GlobalSuppressions.cs,**/*Program.cs,**/*Scopes.cs,**/*Helpers.cs,**/*CesuEventLogProcessor.cs,**/*OutboxProcessor.cs,**/*SynchroniseAllConsumersJob.cs,**/*SynchroniseDailyConsumersJob.cs" `
+                                    /d:sonar.coverage.exclusions="**tests/**/*.*,**Tests/**/*.*,**Clients/**/*.*,**/*.json,**/DTOs/**/*.cs,**/DataBase/**,**/*.sql" `
+                                    /d:sonar.test.exclusions="**tests/**/*.*,**Tests/**/*.*,**Clients/**/*.*" `
+                                    /d:sonar.cpd.exclusions="**/DTOs/**/*.cs,**/*.json" `
+                                    /d:sonar.cs.vstest.reportsPaths="\${env:WORKSPACE}\\reports\\**\\*.trx" `
+                                    /d:sonar.cs.vscoveragexml.reportsPaths="\${env:WORKSPACE}\\reports\\**\\*.xml" `
+                                    /d:sonar.host.url='https://sonarqube.glb.pluxee.tools' `
+                                    /d:sonar.pullrequest.key="${gitlabMergeRequestIid}" `
+                                    /d:sonar.pullrequest.branch="${gitlabBranch}" `
+                                    /d:sonar.pullrequest.base="${gitlabTargetBranch}" `
+                                    /d:sonar.token="\${env:sonar_token}"
+                                """)
+                            } else {
+                                // Mode Branche standard
+                                echo "Mode: Branch Analysis"
+                                sonarBeginStatus = powershell(returnStatus: true, script: """
+                                    dotnet C:\\Users\\jenkins\\.dotnet\\tools\\.store\\dotnet-sonarscanner\\6.2.0\\dotnet-sonarscanner\\6.2.0\\tools\\netcoreapp3.1\\any\\SonarScanner.MSBuild.dll begin `
+                                    /k:"${env.sonar_key}" `
+                                    /d:sonar.exclusions="**/*.html,**tests/**/*.*,**clients/**/*.*,**/*.json,**/*.sql,**/*Extensions.cs,**/Configurations/**,**/Endpoints/**,**/*GlobalSuppressions.cs,**/*Program.cs,**/*Scopes.cs,**/*Helpers.cs,**/*CesuEventLogProcessor.cs,**/*OutboxProcessor.cs,**/*SynchroniseAllConsumersJob.cs,**/*SynchroniseDailyConsumersJob.cs" `
+                                    /d:sonar.coverage.exclusions="**tests/**/*.*,**Tests/**/*.*,**Clients/**/*.*,**/*.json,**/DTOs/**/*.cs,**/DataBase/**,**/*.sql" `
+                                    /d:sonar.test.exclusions="**tests/**/*.*,**Tests/**/*.*,**Clients/**/*.*" `
+                                    /d:sonar.cpd.exclusions="**/DTOs/**/*.cs,**/*.json" `
+                                    /d:sonar.cs.vstest.reportsPaths="\${env:WORKSPACE}\\reports\\**\\*.trx" `
+                                    /d:sonar.cs.vscoveragexml.reportsPaths="\${env:WORKSPACE}\\reports\\**\\*.xml" `
+                                    /d:sonar.host.url='https://sonarqube.glb.pluxee.tools' `
+                                    /d:sonar.branch.name="${gitlabBranch}" `
+                                    /d:sonar.token="\${env:sonar_token}"
+                                """)
                             }
-                            dotnet sonarscanner end /d:sonar.login="$env:sonar_token"
-                        ''')
-                        if (status > 0) { exit ${status} }
-                    }
-                    withSonarQubeEnv('SonarQube') {}
-                    timeout(time: 5, unit: 'MINUTES') {
-                        waitForQualityGate abortPipeline: true,
-                        webhookSecretId: 'sonarqube-webhook'
+                            
+                            if (sonarBeginStatus != 0) {
+                                error "SonarQube BEGIN phase failed with exit code: ${sonarBeginStatus}"
+                            }
+ 
+                            
+                            // Phase BUILD - Build avec SonarQube intégré
+                            echo "======================================================"
+                            echo "SONARQUBE: BUILDING PROJECT"
+                            echo "======================================================"
+                            
+                            // Construire le projet avec SonarQube intégré
+                            def apis = env.APIS_LIST.split(',')
+                            for (api in apis) {
+                                def apiTrim = api.trim()
+                                if (!apiTrim.isEmpty()) {
+                                    echo "Building API: ${apiTrim}"
+                                    bat """
+                                        powershell.exe -ExecutionPolicy Bypass -File "${env.BUILD_SCRIPT_PATH}" ^
+                                            -proxyServer "${env.PROXY_SERVER}" ^
+                                            -proxyPort "${env.PROXY_PORT}" ^
+                                            -assemblyName "${apiTrim}" ^
+                                            -type "Api" ^
+                                            -environment "${params.ENVIRONMENT}" ^
+                                            -baseFolder "${env.WORKSPACE}\\project"
+                                    """
+                                }
+                            }
+                            
+                            echo "✓ Build completed with SonarQube integration"
+                            echo ""
+                            
+                            // Phase END - Finalisation et upload vers SonarQube
+                            echo "======================================================"
+                            echo "SONARQUBE: PHASE END"
+                            echo "======================================================"
+                            
+                            def sonarEndStatus = powershell(returnStatus: true, script: '''
+                                dotnet C:\\Users\\jenkins\\.dotnet\\tools\\.store\\dotnet-sonarscanner\\6.2.0\\dotnet-sonarscanner\\6.2.0\\tools\\netcoreapp3.1\\any\\SonarScanner.MSBuild.dll end /d:sonar.token="$env:sonar_token"
+                            ''')
+                            
+                            if (sonarEndStatus != 0) {
+                                error "SonarQube END phase failed with exit code: ${sonarEndStatus}"
+                            }
+                            
+                            echo "✓ SonarQube analysis completed successfully"
+                          
+                        }
                     }
                 }
             }
-            // info: make some post action to send the status to gitlab and update the stage status var used to set the global status at the end
             post {
                 success {
-                    // info: update the stage status on gitlab to follow the jenkins pipeline
                     updateGitlabCommitStatus name: 'SonarQube Analysis', state: 'success'
-                    // info: use scripted pipeline in the declarative pipeline used here
-                    script { status_stage_sonarqubeanalysis = 'success' }
+                    script { 
+                        status_stage_sonarqubeanalysis = 'success'
+                        echo "✓ SonarQube Analysis: SUCCESS"
+                    }
                 }
                 failure {
-                    // info: update the stage status on gitlab to follow the jenkins pipeline
                     updateGitlabCommitStatus name: 'SonarQube Analysis', state: 'failed'
-                    // info: use scripted pipeline in the declarative pipeline used here
-                    script { status_stage_sonarqubeanalysis = 'failed' }
+                    script { 
+                        status_stage_sonarqubeanalysis = 'failed'
+                        echo "✗ SonarQube Analysis: FAILED"
+                    }
                 }
                 unstable {
-                    // info: update the stage status on gitlab to follow the jenkins pipeline
                     updateGitlabCommitStatus name: 'SonarQube Analysis', state: 'success'
-                    // info: use scripted pipeline in the declarative pipeline used here
-                    script { status_stage_sonarqubeanalysis = 'warning' }
+                    script { 
+                        status_stage_sonarqubeanalysis = 'warning'
+                        echo "⚠ SonarQube Analysis: WARNING"
+                    }
                 }
             }
-
         }
-
-        stage('DAST - OWASP ZAP') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            when {
-                expression { env.SECURITY_SCAN_ENABLED == 'true' }
-            }
-            steps {
-                 script {
-                    echo "======================================================"
-                    echo "DAST - OWASP ZAP"
-                    echo "======================================================"
-                 }
-            }
-        }
-
+ 
         stage('Build') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { env.SECURITY_SCAN_ENABLED == 'true' }
             }
@@ -633,9 +741,9 @@ pipeline {
                 }
             }
         }
-      
+        
         stage('Deploy to TEST') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'test' }
             }
@@ -720,7 +828,7 @@ pipeline {
         // ================================================================
         
         stage('Health Check') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { 
             //         env.DEPLOY_ENABLED == 'true' && 
@@ -735,9 +843,23 @@ pipeline {
                  }
             }
         }
-        
+         
+        stage('DAST - OWASP ZAP') {
+             // agent { label env.PIPELINE_AGENT_LABEL }
+            when {
+                expression { env.SECURITY_SCAN_ENABLED == 'true' }
+            }
+            steps {
+                 script {
+                    echo "======================================================"
+                    echo "DAST - OWASP ZAP"
+                    echo "======================================================"
+                 }
+            }
+        }
+
         stage('Functional Tests') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { 
             //         env.DEPLOY_ENABLED == 'true' && 
@@ -753,9 +875,8 @@ pipeline {
             }
         }
     
-
         stage('Approval for STAGING') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'staging' }
             }
@@ -773,7 +894,7 @@ pipeline {
         }
 
         stage('Deploy to STAGING') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'staging' }
             }
@@ -857,7 +978,7 @@ pipeline {
         // STAGE 8: Audit Sécurité
         // ================================================================
         stage('Security Audit') {
-            agent { label env.PIPELINE_AGENT_LABEL }
+             // agent { label env.PIPELINE_AGENT_LABEL }
             steps {
                 script {
                     echo "======================================================"
@@ -1047,7 +1168,7 @@ pipeline {
                 emailext (
                     subject: "Pipeline ${status}: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${duration})",
                     body: emailBody,
-                    to: "${env.BUILD_USER_EMAIL ?: 'amin.kadira.ext@pluxeegroup.com ; jeanmichel.robert@pluxeegroup.com'}"
+                    to: "${env.BUILD_USER_EMAIL ?: 'amin.kadira.ext@pluxeegroup.com '}"
                 )
             }
         }

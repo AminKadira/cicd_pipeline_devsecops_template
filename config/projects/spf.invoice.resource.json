@@ -1,0 +1,85 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "DevSecOps Pipeline Configuration for spf.invoice.resource",
+    "project": {
+        "name": "spf.invoice.resource",
+        "gitUrl": "git@gitlab.fr.pluxee.tools:cicd/spf.invoice.resource.git",
+        "gitBranch": "release/cicd",
+        "gitCredentials": "git-ssh-key",
+        "jenkinsAgent": "plxfrsr-l1pi027",
+        "environments": [
+            {
+                "name": "tst",
+                "displayName": "Test",
+                "targetServers": []
+            },
+            {
+                "name": "sta",
+                "displayName": "Staging",
+                "targetServers": []
+            },
+            {
+                "name": "prd",
+                "displayName": "Production",
+                "targetServers": []
+            }
+        ]
+    },
+    "build": {
+        "scriptPath": "D:\\_puppet\\script\\buildDotNetCore3.1.ps1",
+        "framework": ".NET Core 3.1",
+        "configuration": "Release",
+        "verbosity": "normal",
+        "proxyServer": "proxy.fr.pluxee.tools",
+        "proxyPort": "3128",
+        "apis": [],
+        "artifacts": {
+            "pattern": "**/bin/Release/**/*.dll",
+            "exclude": [
+                "**/obj/**",
+                "**/test/**"
+            ]
+        }
+    },
+    "security": {
+        "dependencyScan": {
+            "enabled": true,
+            "tool": "NuGet",
+            "failOnCritical": true,
+            "failOnHigh": true,
+            "failOnMedium": false
+        },
+        "codeAnalysis": {
+            "enabled": false,
+            "tool": "SonarQube"
+        },
+        "secretsScan": {
+            "enabled": false,
+            "tool": "GitLeaks"
+        }
+    },
+    "notifications": {
+        "devteam": [],
+        "qateam": [
+            "amin.kadira.ext@pluxeegroup.com",
+            "jeanmichel.robert@pluxeegroup.com"
+        ],
+        "securityTeam": []
+    },
+    "logging": {
+        "level": "INFO",
+        "retention": {
+            "builds": 30,
+            "daysToKeep": 90
+        },
+        "archiveArtifacts": true
+    },
+    "quality": {
+        "failBuild": {
+            "onSecurityIssues": true,
+            "onBuildFailure": true,
+            "onDeploymentFailure": true
+        }
+    }
+}
+
