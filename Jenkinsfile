@@ -1,7 +1,5 @@
 pipeline {
-    agent {
-        label params.EXECUTION_LABEL
-    }
+    agent none
 
     triggers {
         //pollSCM('H/5 * * * *')  // Vérifie develop toutes les 5 minutes
@@ -32,8 +30,9 @@ pipeline {
     }
          
     stages {
+
         stage('Identify Trigger Repository') {
-            // // agent { label params.EXECUTION_LABEL }
+            agent { label params.EXECUTION_LABEL }
             steps {
                 script {
                     echo "======================================================"
@@ -41,27 +40,23 @@ pipeline {
                     echo "======================================================"
                     
                     try {
-                        def triggerRepoUrl = bat(
-                            returnStdout: true,
-                            script: """
-                                @echo off
-                                git config --get remote.origin.url
-                            """
-                        ).trim()
+
+                        def project = "${env.gitlabSourceNamespace}/${env.gitlabSourceRepoName}"
+
                         
-                        if (!triggerRepoUrl?.trim()) {
-                            echo "⚠ Unable to determine trigger repository URL"
+                        if (!project?.trim()) {
+                            echo "⚠ Unable to determine trigger project name"
                             env.TRIGGER_REPO_URL = 'unknown'
                             env.TRIGGER_REPO_NAME = 'unknown'
                         } else {
-                            def normalized = triggerRepoUrl.replaceAll('\\\\', '/')
-                            def repoName = normalized.replaceAll(/.*[\\/:]/, '').replaceAll(/\\.git$/, '')
+                          
                             
-                            env.TRIGGER_REPO_URL = triggerRepoUrl
-                            env.TRIGGER_REPO_NAME = repoName ?: triggerRepoUrl
+                            env.TRIGGER_REPO_URL = "${env.gitlabSourceRepoURL}"
+                            env.TRIGGER_REPO_NAME = "${env.gitlabSourceRepoName}"
                             
                             echo "Pipeline triggered by: ${env.TRIGGER_REPO_NAME}"
                             echo "Repository URL: ${env.TRIGGER_REPO_URL}"
+                            echo "Branch: ${env.gitlabBranch}"
                         }
                     } catch (Exception ex) {
                         echo "⚠ Failed to capture trigger repository information: ${ex.message}"
@@ -73,7 +68,7 @@ pipeline {
         }
         
         stage('Load Configuration') {
-           //  // agent { label params.EXECUTION_LABEL }
+            agent { label params.EXECUTION_LABEL }
             steps {
                 script {
                     echo "======================================================"
@@ -81,11 +76,9 @@ pipeline {
                     echo "======================================================"
                     
                     // Nettoyer le nom du projet (enlever .git de manière robuste)
-                    def projectKey = (env.TRIGGER_REPO_NAME ?: '').replaceAll(/\\.git$/, '').replaceAll(/\\.git\\./, '.').trim()
+                    def projectKey = (env.TRIGGER_REPO_NAME ?: '').trim()
                     if (!projectKey?.trim()) {
                         error "Project key derived from trigger repo is empty"
-                    }else{
-                        
                     }
 
                     // Appeler PowerShell pour parser JSON
@@ -148,7 +141,7 @@ pipeline {
         }
         
         stage('Checkout Project') {
-            // // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             steps {
                 echo "======================================================"
                 echo "CHECKING OUT PROJECT: ${env.PROJECT_NAME}"
@@ -172,7 +165,7 @@ pipeline {
         }
 
         stage('Secret Scanning - GitLeaks') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -263,7 +256,7 @@ pipeline {
         }   
 
         stage('Security - Dependency Scan') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -362,7 +355,7 @@ pipeline {
         }
 
         stage('SCA - OWASP Dependency Check') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
             // }
@@ -698,7 +691,7 @@ pipeline {
         }
  
         stage('Build') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { env.SECURITY_SCAN_ENABLED == 'true' }
             }
@@ -743,7 +736,7 @@ pipeline {
         }
         
         stage('Deploy to TEST') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'test' }
             }
@@ -828,7 +821,7 @@ pipeline {
         // ================================================================
         
         stage('Health Check') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { 
             //         env.DEPLOY_ENABLED == 'true' && 
@@ -845,7 +838,7 @@ pipeline {
         }
          
         stage('DAST - OWASP ZAP') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { env.SECURITY_SCAN_ENABLED == 'true' }
             }
@@ -859,7 +852,7 @@ pipeline {
         }
 
         stage('Functional Tests') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             // when {
             //     expression { 
             //         env.DEPLOY_ENABLED == 'true' && 
@@ -876,7 +869,7 @@ pipeline {
         }
     
         stage('Approval for STAGING') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'staging' }
             }
@@ -894,7 +887,7 @@ pipeline {
         }
 
         stage('Deploy to STAGING') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             when {
                 expression { params.ENVIRONMENT == 'staging' }
             }
@@ -978,7 +971,7 @@ pipeline {
         // STAGE 8: Audit Sécurité
         // ================================================================
         stage('Security Audit') {
-             // agent { label env.PIPELINE_AGENT_LABEL }
+            agent { label env.PIPELINE_AGENT_LABEL }
             steps {
                 script {
                     echo "======================================================"
