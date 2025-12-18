@@ -76,7 +76,13 @@
     },
     "notifications": {
         "devteam": [
-            "ousema.kassaoui@pluxeegroup.com",
+            "Oussama KASSAOUI <oussama.kassoui@pluxeegroup.com>",
+            "Younes CHABCHI <younes.chabchi@pluxeegroup.com>",
+            "Adrien BLONDEL <adrien.blondel@pluxeegroup.com>",
+            "Alexandre CAZENAVE <alexandre.cazenave@pluxeegroup.com>",
+            "Igor MILOSEVIC <igor.milosevic@pluxeegroup.com>",
+            "Sébastien TRESSE <sebastien.tresse@pluxeegroup.com>",
+            "Aymen HAFSI <aymen.hafsi@pluxeegroup.com>",
             "fabrice.saussaye@pluxeegroup.com"
         ],
         "qateam": [
