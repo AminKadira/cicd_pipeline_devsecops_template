@@ -1,6 +1,6 @@
 # Sur vm011 (Admin PowerShell)
 param(
-    [string]$ProxyAddress = "proxy.fr.pluxee.tools",
+    [string]$ProxyAddress = "proxy.fr.laridak.tools",
     [int]$ProxyPort = 3128
 )
 # Version à installer

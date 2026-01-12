@@ -1,0 +1,97 @@
+
+{
+    "framework": {
+      "name": "laridak-devsecops-pipeline",
+      "version": "2.0.0",
+      "maintainer": "devops-team@laridakgroup.com"
+    },
+    "defaults": {
+      "timeouts": {
+        "checkout": 10,
+        "build": 30,
+        "test": 45,
+        "security": 20,
+        "deploy": 15
+      },
+      "retry": {
+        "maxAttempts": 3,
+        "delaySeconds": 30,
+        "exponentialBackoff": true
+      },
+      "artifacts": {
+        "retentionDays": 30,
+        "fingerprintEnabled": true
+      }
+    },
+    "tools": {
+      "windows": {
+        "gitleaks": "C:/tools/gitleaks/gitleaks.exe",
+        "owaspDc": "D:/Jenkins/tools/org.jenkinsci.plugins.DependencyCheck.tools.DependencyCheckInstallation/Dep-CICD/bin/dependency-check.bat",
+        "dotnet": "C:/Program Files/dotnet/dotnet.exe",
+        "sonarScanner": "C:/Users/jenkins/.dotnet/tools/.store/dotnet-sonarscanner/6.2.0/dotnet-sonarscanner/6.2.0/tools/netcoreapp3.1/any/SonarScanner.MSBuild.dll",
+        "node": "C:/Program Files/nodejs/node.exe",
+        "java": "C:/Program Files/Java/jdk-17/bin/java.exe"
+      },
+      "linux": {
+        "gitleaks": "/usr/local/bin/gitleaks",
+        "owaspDc": "/opt/dependency-check/bin/dependency-check.sh",
+        "dotnet": "/usr/share/dotnet/dotnet",
+        "sonarScanner": "/opt/sonar-scanner/bin/sonar-scanner",
+        "node": "/usr/bin/node",
+        "java": "/usr/bin/java"
+      }
+    },
+    "services": {
+      "proxy": {
+        "server": "proxy.fr.laridak.tools",
+        "port": 3128,
+        "noProxy": "localhost,127.0.0.1,*.laridak.tools"
+      },
+      "sonarqube": {
+        "url": "https://sonarqube.glb.laridak.tools",
+        "credentialsId": "sonar-token"
+      },
+      "nexus": {
+        "url": "https://nexus.fr.laridak.tools",
+        "credentialsId": "nexus-credentials"
+      },
+      "gitlab": {
+        "url": "https://gitlab.fr.laridak.tools",
+        "credentialsId": "git-ssh-key"
+      }
+    },
+    "agents": {
+      "default": "larivm-l1pi008",
+      "sonarqube": "larivm-l1pi008",
+      "pools": {
+        "dotnet": ["larivm-l1pi027", "larivm-l1pi022"],
+        "java": ["larivm-l1pi008"],
+        "angular": ["larivm-l1pi027"]
+      }
+    },
+    "notifications": {
+      "email": {
+        "enabled": true,
+        "smtpServer": "smtp.laridak.tools",
+        "defaultRecipients": ["devops-alerts@laridakgroup.com"]
+      },
+      "teams": {
+        "enabled": false,
+        "webhookCredentialsId": "teams-webhook"
+      }
+    },
+    "paths": {
+      "windows": {
+        "puppetScripts": "D:/_puppet/script",
+        "workspace": "C:/Jenkins/workspace",
+        "reports": "reports",
+        "artifacts": "artifacts"
+      },
+      "linux": {
+        "puppetScripts": "/opt/puppet/scripts",
+        "workspace": "/var/jenkins/workspace",
+        "reports": "reports",
+        "artifacts": "artifacts"
+      }
+    }
+  }

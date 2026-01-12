@@ -1,5 +1,5 @@
 # ==============================================================================
-# Enhanced Pluxee Automation Test Execution Script
+# Enhanced laridak Automation Test Execution Script
 # ==============================================================================
 # Description: Executes automated tests with proper parameter handling
 # Original: Automation_PS_File_PW.ps1
@@ -10,7 +10,7 @@
 param(
     [Parameter(Mandatory=$false, HelpMessage="Job name for the test execution")]
     [ValidateNotNullOrEmpty()]
-    [string]$JobName = "pluxee_automation_project",
+    [string]$JobName = "laridak_automation_project",
     
     [Parameter(Mandatory=$true, HelpMessage="Tag to run (e.g., WEB, @smoke, @regression)")]
     [ValidateNotNullOrEmpty()]
@@ -26,7 +26,7 @@ param(
     
     [Parameter(Mandatory=$false, HelpMessage="Git repository URL")]
     [ValidateNotNullOrEmpty()]
-    [string]$GitRepository = "git@gitlab.fr.pluxee.tools:recette/pluxee_automation_project.git",
+    [string]$GitRepository = "git@gitlab.fr.laridak.tools:recette/laridak_automation_project.git",
     
     [Parameter(Mandatory=$false, HelpMessage="Local project path for execution")]
     [ValidateNotNullOrEmpty()]
@@ -60,7 +60,7 @@ $MachineName = $env:COMPUTERNAME
 $Environment = $Environment.ToLower()
 
 # Default project folder name
-$DefaultJobName = "pluxee_automation_project"
+$DefaultJobName = "laridak_automation_project"
 
 # ==============================================================================
 # HELPER FUNCTIONS
@@ -113,7 +113,7 @@ function Write-WarningMessage {
 try {
     # Display execution parameters
     Write-Host ""
-    Write-Host "🚀 STARTING PLUXEE AUTOMATION TEST EXECUTION" -ForegroundColor Magenta
+    Write-Host "🚀 STARTING laridak AUTOMATION TEST EXECUTION" -ForegroundColor Magenta
     Write-Host "=" * 80 -ForegroundColor Magenta
     
     Write-InfoMessage "Execution Parameters:"
@@ -353,14 +353,14 @@ try {
 
 <#
 .SYNOPSIS
-    Enhanced Pluxee Automation Test Execution Script
+    Enhanced laridak Automation Test Execution Script
 
 .DESCRIPTION
-    This script automates the process of running Pluxee automation tests with proper parameter handling.
+    This script automates the process of running laridak automation tests with proper parameter handling.
     It handles git operations, dependency installation, test execution, and report archiving.
 
 .PARAMETER JobName
-    Job name for the test execution (default: "pluxee_automation_project")
+    Job name for the test execution (default: "laridak_automation_project")
 
 .PARAMETER TagToRun
     Tag to run tests for (e.g., "WEB", "@smoke", "@regression") - REQUIRED
@@ -373,7 +373,7 @@ try {
     Build number for reporting purposes (default: 1)
 
 .PARAMETER GitRepository
-    Git repository URL (default: git@gitlab.fr.pluxee.tools:recette/pluxee_automation_project.git)
+    Git repository URL (default: git@gitlab.fr.laridak.tools:recette/laridak_automation_project.git)
 
 .PARAMETER ProjectPath
     Local project path for execution (default: "C:\Remote_Execution")

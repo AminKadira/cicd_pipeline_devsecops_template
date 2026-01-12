@@ -2,13 +2,13 @@
     "deploy": {
         "enabled": true,
         "servers": [
-            "plxfrsr-l1saa91",
-            "plxfrsr-l1saa92"
+            "larivm-l1saa91",
+            "larivm-l1saa92"
         ]
     },
     "tests": {
         "enabled": true,
-        "targetServer": "plxfrsr-l1saa91",
+        "targetServer": "larivm-l1saa91",
         "targetPort": "8080",
         "healthCheckEndpoint": "/health",
         "waitForHealthy": true,

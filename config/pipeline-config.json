@@ -6,7 +6,7 @@
   },
   "repositories": {
     "tests": {
-      "url": "git@gitlab.fr.pluxee.tools:amin.kadira.ext/qa_integration_piplinesec_poc.git",
+      "url": "git@gitlab.fr.laridak.tools:amin.kadira.ext/qa_integration_piplinesec_poc.git",
       "branch": "main"
     }
   },

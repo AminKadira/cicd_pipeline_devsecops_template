@@ -8,14 +8,14 @@ title = "GitLeaks Security Scan - SPF Invoice Service"
 useDefault = true
 
 # ============================================================
-# RÈGLES PERSONNALISÉES SPF/PLUXEE
+# RÈGLES PERSONNALISÉES SPF/laridak
 # ============================================================
 
 [[rules]]
-id = "pluxee-api-key"
-description = "Pluxee API Key Pattern"
-regex = '''(?i)(plx|pluxee)[_-]?(api)?[_-]?key['":\s]*[=:]\s*['"][a-zA-Z0-9]{32,}['"]'''
-tags = ["api-key", "pluxee", "secret"]
+id = "laridak-api-key"
+description = "laridak API Key Pattern"
+regex = '''(?i)(plx|laridak)[_-]?(api)?[_-]?key['":\s]*[=:]\s*['"][a-zA-Z0-9]{32,}['"]'''
+tags = ["api-key", "laridak", "secret"]
 
 [[rules]]
 id = "spf-service-token"

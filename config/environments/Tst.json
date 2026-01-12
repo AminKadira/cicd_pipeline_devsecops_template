@@ -2,20 +2,20 @@
     "deploy": {
         "enabled": true,
         "servers": [
-            "plxfrsr-l2ta033",
-            "plxfrsr-l2ta015"
+            "larivm-l2ta033",
+            "larivm-l2ta015"
         ]
     },
     "tests": {
         "enabled": true,
-        "targetServer": "plxfrsr-l2ta033",
+        "targetServer": "larivm-l2ta033",
         "targetPort": "8080",
         "healthCheckEndpoint": "/health",
         "waitForHealthy": true,
         "healthCheckTimeout": 120
     },
     "notifications": {
-        "email": "amin.kadira.ext@pluxeegroup.com;jeanmichel.robert@pluxeegroup.com",
-        "securityTeam": "security-alerts@pluxeegroup.com"
+        "email": "amin.kadira.ext@laridakgroup.com;jeanmichel.robert@laridakgroup.com",
+        "securityTeam": "security-alerts@laridakgroup.com"
     }
 } 

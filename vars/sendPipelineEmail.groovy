@@ -60,7 +60,7 @@ def call(Map config = [:]) {
             .replace('{{BUILD_SIGNING_STATUS}}', buildSigning.status)
         
         // Destinataires
-        def recipients = config.to ?: (env.BUILD_USER_EMAIL ?: 'amin.kadira.ext@pluxeegroup.com')
+        def recipients = config.to ?: (env.BUILD_USER_EMAIL ?: 'amin.kadira.ext@laridakgroup.com')
         
         // Envoi email
         emailext (

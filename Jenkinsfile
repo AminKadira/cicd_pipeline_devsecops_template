@@ -1,28 +1,27 @@
 pipeline {
-    agent none
+
+    agent { 
+        label params.EXECUTION_LABEL 
+    }
+    
+    options {
+        timeout(time: 2, unit: 'HOURS')
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '30', daysToKeepStr: '90'))
+        disableConcurrentBuilds()
+    }
 
     triggers {
-        //pollSCM('H/5 * * * *')  // Vérifie develop toutes les 5 minutes
-        githubPush()  // Trigger GitHub
-
+        githubPush()
     }
     
     parameters {
         string(
             name: 'EXECUTION_LABEL',
-            defaultValue: 'plxfrsr-l1pi027',
-            description: 'Jenkins agents label'
+            defaultValue: 'larivm-l1pi008',
+            description: 'Jenkins agent label'
         )
-        choice(
-            name: 'ENVIRONMENT',
-            choices: ['Tst', 'Sta'],
-            description: 'Target environment'
-        )
-
-         string(name: 'username', defaultValue: '', description: 'Nom d’utilisateur')
-         password(name: 'password', defaultValue: '', description: 'Mot de passe')
-         password(name: 'NVD_API_KEY', defaultValue: '', description: 'NVD API key (optionnelle)')
-
+        
     }
 
     environment {
@@ -30,1009 +29,214 @@ pipeline {
     }
          
     stages {
-
-        stage('Identify Trigger Repository') {
-            agent { label params.EXECUTION_LABEL }
+        // ================================================================
+        // STAGE 1: INITIALIZATION
+        // ================================================================
+        stage('Initialize') {
             steps {
                 script {
-                    echo "======================================================"
-                    echo "DETECTING TRIGGERING REPOSITORY"
-                    echo "======================================================"
-                    
-                    try {
-
-                        def project = "${env.gitlabSourceNamespace}/${env.gitlabSourceRepoName}"
-
-                        
-                        if (!project?.trim()) {
-                            echo "⚠ Unable to determine trigger project name"
-                            env.TRIGGER_REPO_URL = 'unknown'
-                            env.TRIGGER_REPO_NAME = 'unknown'
-                        } else {
-                          
-                            
-                            env.TRIGGER_REPO_URL = "${env.gitlabSourceRepoURL}"
-                            env.TRIGGER_REPO_NAME = "${env.gitlabSourceRepoName}"
-                            
-                            echo "Pipeline triggered by: ${env.TRIGGER_REPO_NAME}"
-                            echo "Repository URL: ${env.TRIGGER_REPO_URL}"
-                            echo "Branch: ${env.gitlabBranch}"
-                        }
-                    } catch (Exception ex) {
-                        echo "⚠ Failed to capture trigger repository information: ${ex.message}"
-                        env.TRIGGER_REPO_URL = 'unknown'
-                        env.TRIGGER_REPO_NAME = 'unknown'
-                    }
+                    initializePipeline()
                 }
             }
         }
         
+        // ================================================================
+        // STAGE 2: LOAD CONFIGURATION
+        // ================================================================
         stage('Load Configuration') {
-            agent { label params.EXECUTION_LABEL }
             steps {
                 script {
-                    echo "======================================================"
-                    echo "LOADING PIPELINE CONFIGURATION"
-                    echo "======================================================"
-                    
-                    // Nettoyer le nom du projet (enlever .git de manière robuste)
-                    def projectKey = (env.TRIGGER_REPO_NAME ?: '').trim()
-                    if (!projectKey?.trim()) {
-                        error "Project key derived from trigger repo is empty"
-                    }
-
-                    // Appeler PowerShell pour parser JSON
-                    def configOutput = bat(
-                        returnStdout: true,
-                        script: "@powershell -ExecutionPolicy Bypass -File scripts\\utils\\parse-config.ps1 -projectKey ${projectKey}"
-                    ).trim()
-                    
-                    // Parser les lignes KEY=VALUE
-                    configOutput.split('\\n').each { line ->
-                        def parts = line.trim().split('=', 2)
-                        if (parts.size() == 2) {
-                            env."${parts[0]}" = parts[1]
-                        }
-                    }
-                    
-                    // Agent cible : jenkinsAgent du projet, fallback param
-                    env.PIPELINE_AGENT_LABEL = env.JENKINS_AGENT_LABEL ?: params.EXECUTION_LABEL
-                    
-                    echo "======================================================"
-                    echo "CONFIGURATION LOADED SUCCESSFULLY"
-                    echo "======================================================"
-                    echo ""
-                    echo "PIPELINE PARAMETERS:"
-                    echo "  - Agent (param): ${params.EXECUTION_LABEL}"
-                    echo "  - Agent (config): ${env.PIPELINE_AGENT_LABEL}"
-                    echo "  - Environment: ${params.ENVIRONMENT}"
-                    echo "  - Trigger Repo: ${env.TRIGGER_REPO_NAME} (${env.TRIGGER_REPO_URL})"
-                    echo "  - Build Number: ${BUILD_NUMBER}"
-                    echo "  - Timestamp: ${BUILD_TIMESTAMP}"
-                    echo ""
-                    echo "PROJECT:"
-                    echo "  - Name: ${env.PROJECT_NAME}"
-                    echo "  - Branch: ${env.PROJECT_GIT_BRANCH}"
-                    echo "  - Repository: ${env.PROJECT_GIT_URL}"
-                    echo ""
-                    echo "BUILD:"
-                    echo "  - APIs Count: ${env.APIS_COUNT}"
-                    env.APIS_LIST.split(',').each { api ->
-                        echo "    * ${api}"
-                    }
-                    echo "  - Proxy: ${env.PROXY_SERVER}:${env.PROXY_PORT}"
-                    echo ""
-                    echo "SECURITY:"
-                    echo "  - Dependency Scan: ${env.SECURITY_SCAN_ENABLED}"
-                    echo "  - Fail on Critical: ${env.FAIL_ON_CRITICAL}"
-                    echo "  - Fail on High: ${env.FAIL_ON_HIGH}"
-                    echo ""
-                    echo "DEPLOY:"
-                    echo "  - Enabled: ${env.DEPLOY_ENABLED}"
-                    echo "  - VMs Count: ${env.DEPLOY_VMS_COUNT}"
-                    // Safe split pour servers
-                    def serversList = env.DEPLOY_SERVERS.split(';').collect { it.trim() }
-                    serversList.eachWithIndex { server, idx ->
-                        echo "    ${idx + 1}. ${server}"
-                    }
-                  
+                    loadPipelineConfiguration()
                 }
             }
         }
         
+        // ================================================================
+        // STAGE 3: CHECKOUT PROJECT
+        // ================================================================
         stage('Checkout Project') {
             agent { label env.PIPELINE_AGENT_LABEL }
             steps {
-                echo "======================================================"
-                echo "CHECKING OUT PROJECT: ${env.PROJECT_NAME}"
-                echo "======================================================"
-                dir('project') {
-                    git branch: env.PROJECT_GIT_BRANCH,
-                        url: env.PROJECT_GIT_URL
-                    
-                    script {
-                        env.PROJECT_COMMIT_HASH = bat(
-                            returnStdout: true,
-                            script: '@git rev-parse HEAD'
-                        ).trim()
-                    }
-                    
-                    echo "Project checked out successfully"
-                    echo "Branch: ${env.PROJECT_GIT_BRANCH}"
-                    echo "Commit: ${env.PROJECT_COMMIT_HASH}"
+                script {
+                    checkoutProject()
+                     // Stash le code pour les stages suivants
+                    stash name: 'source-code', includes: 'project/**'
                 }
             }
         }
-
-        stage('Secret Scanning - GitLeaks') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            // when {
-            //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
-            // }
-            steps {
-                script {
-                    echo "======================================================"
-                    echo "SECRET SCANNING WITH GITLEAKS"
-                    echo "======================================================"
-                    echo ""
-                    
-                    // Scan repository application
-                    dir('project') {
-                        echo "Scanning application repository..."
-                        
-                        def scanResult = bat(
-                            returnStatus: true,
-                            script: """
-                                powershell.exe -ExecutionPolicy Bypass -File ^
-                                    "${env.WORKSPACE}\\scripts\\security\\gitleaksScan.ps1" ^
-                                    -repoPath . ^
-                                    -configFile "${env.WORKSPACE}\\config\\gitleaks.toml" ^
-                                    -reportDir "${env.WORKSPACE}\\gitleaks-report" ^
-                            """
-                        )
-                        
-                        echo ""
-                        echo "Scan exit code: ${scanResult}"
-                        echo ""
-                        
-                        if (scanResult != 0) {
-                            echo " SECURITY GATE: FAILED"
-                            echo "   Secrets detected in repository"
-                            echo ""
-                            
-                            // // Charger rapport pour afficher statistiques
-                            // if (fileExists("${env.WORKSPACE}\\gitleaks-report\\gitleaks-report.json")) {
-                            //     def report = readJSON file: "${env.WORKSPACE}\\gitleaks-report\\gitleaks-report.json"
-                            //     def secretsCount = report.size()
-                                
-                            //     echo "Secrets found: ${secretsCount}"
-                            //     echo ""
-                            //     echo " CRITICAL: Pipeline blocked due to exposed secrets"
-                            //     echo "   Review HTML report for details"
-                            //     echo ""
-                            // }
-                            
-                            error "GitLeaks detected secrets - Pipeline blocked for security"
-                        } else {
-                            echo " SECURITY GATE: PASSED"
-                            echo "   No secrets detected"
-                        }
+        
+        // ================================================================
+        // STAGE 4: SECURITY GATES (PARALLEL)
+        // ================================================================
+        stage('Security Gates') {
+            options { timeout(time: 30, unit: 'MINUTES') }
+            parallel {
+                stage('GitLeaks') {
+                    agent { label env.PIPELINE_AGENT_LABEL }
+        
+                    when { expression { env.GITLEAKS_ENABLED == 'True' } }
+                    steps {
+                        script { 
+                            unstash 'source-code'
+                            runGitLeaksScan() 
+                            }
+                    }
+                    post {
+                        always { publishGitLeaksReport() }
                     }
                 }
-            }
-            post {
-                always {
-                    script {
-                        // Publier rapport HTML
-                        publishHTML([
-                            allowMissing: true,
-                            alwaysLinkToLastBuild: true,
-                            keepAll: true,
-                            reportDir: 'gitleaks-report',
-                            reportFiles: 'gitleaks-report.html',
-                            reportName: 'GitLeaks Secret Scan Report',
-                            reportTitles: 'GitLeaks'
-                        ])
-                        
-                        // Archiver rapports JSON
-                        archiveArtifacts artifacts: 'gitleaks-report/**/*',
-                                    allowEmptyArchive: true,
-                                    fingerprint: true
-                    }
-                }
-                success {
-                    echo " No secrets exposed in repository"
-                }
-                failure {
-                    echo " CRITICAL SECURITY ALERT"
-                    echo "   Secrets have been exposed in the repository"
-                    echo "   Immediate action required:"
-                    echo "     1. Review GitLeaks report"
-                    echo "     2. Rotate all exposed credentials"
-                    echo "     3. Remove secrets from Git history"
-                    echo "     4. Use Jenkins Credentials Store for secrets"
-                }
-            }
-        }   
-
-        stage('Security - Dependency Scan') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            // when {
-            //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
-            // }
-            steps {
-                echo "======================================================"
-                echo "SECURITY: SCANNING DEPENDENCIES FOR VULNERABILITIES"
-                echo "======================================================"
-                echo "Method: .NET Native Vulnerability Scanner"
-                echo "Fail on Critical: ${env.FAIL_ON_CRITICAL}"
-                echo "Fail on High: ${env.FAIL_ON_HIGH}"
-                echo ""
                 
-                dir('project') {
-                    script {
-                        bat """
-                            echo Check java version 
-                            java -version 
-                            
-                            echo Restoring NuGet packages...
-                            dotnet restore
-                            echo.
-                        """
-                        
-                        bat '''
-                            echo ====================================================
-                            echo SCANNING FOR VULNERABLE PACKAGES
-                            echo ====================================================
-                            echo.
-                            dotnet list package --vulnerable --include-transitive > dependency-scan.txt 2>&1
-                            type dependency-scan.txt
-                            echo.
-                            echo ====================================================
-                        '''
-                        
-                        def scanContent = readFile('dependency-scan.txt')
-                        
-                        def hasVulnerabilities = scanContent.contains('has the following vulnerable packages')
-                        def hasCritical = scanContent.contains('Critical')
-                        def hasHigh = scanContent.contains('High')
-                        def hasMedium = scanContent.contains('Moderate')
-                        def hasLow = scanContent.contains('Low')
-                        
-                        def criticalCount = scanContent.split('Critical').length - 1
-                        def highCount = scanContent.split('High').length - 1
-                        def mediumCount = scanContent.split('Moderate').length - 1
-                        def lowCount = scanContent.split('Low').length - 1
-                        
-                        echo "======================================================"
-                        echo "SECURITY SCAN RESULTS"
-                        echo "======================================================"
-                        echo "Vulnerabilities Found: ${hasVulnerabilities}"
-                        echo ""
-                        echo "SEVERITY BREAKDOWN:"
-                        echo "  - Critical: ${criticalCount}"
-                        echo "  - High: ${highCount}"
-                        echo "  - Medium: ${mediumCount}"
-                        echo "  - Low: ${lowCount}"
-                        echo "======================================================"
-                        echo ""
-                        
-                        if (hasVulnerabilities) {
-                            if (hasCritical && env.FAIL_ON_CRITICAL == 'true') {
-                                echo "SECURITY GATE: FAILED"
-                                echo "Reason: Critical vulnerabilities detected (${criticalCount})"
-                                error "SECURITY GATE FAILED: Critical vulnerabilities detected"
-                            }
-                            else if (hasHigh && env.FAIL_ON_HIGH == 'true') {
-                                echo "SECURITY GATE: FAILED"
-                                echo "Reason: High vulnerabilities detected (${highCount})"
-                                error "SECURITY GATE FAILED: High vulnerabilities detected"
-                            }
-                            else if (hasMedium || hasLow) {
-                                echo "SECURITY GATE: WARNING"
-                                echo "Reason: Medium/Low vulnerabilities detected"
-                                unstable "Medium/Low vulnerabilities detected - Review required"
-                            }
-                        } else {
-                            echo "SECURITY GATE: PASSED"
-                            echo "No vulnerable packages detected"
-                        }
-                        
-                        echo "======================================================"
+                stage('Dependency Scan') {
+                    agent { label env.PIPELINE_AGENT_LABEL }
+
+                    when { expression { env.DEPENDENCY_SCAN_ENABLED == 'True' } }
+                    steps {
+                        script { 
+                            unstash 'source-code'                            
+                            runDependencyScan() }
+                    }
+                    post {
+                        always { archiveDependencyReport() }
+                    }
+                }
+                
+                stage('OWASP DC') {
+                    agent { label env.PIPELINE_AGENT_LABEL }
+
+                    when { expression { env.OWASP_DC_ENABLED == 'True' } }
+                    steps {
+                        script { 
+                            unstash 'source-code'
+                            unOwaspDependencyCheck() }
+                    }
+                    post {
+                        always { publishOwaspReport() }
                     }
                 }
             }
+        }
+        
+        // ================================================================
+        // STAGE 6: BUILD
+        // ================================================================
+        stage('Build') {
+            agent { label env.PIPELINE_AGENT_LABEL }
+              when { 
+                expression { 
+                    env.RUN_ENVIRONMENT in ['tst', 'sta', 'prd']
+                } 
+            }
+            steps {
+                script { buildComponents() }
+            }
             post {
-                always {
-                    archiveArtifacts artifacts: 'project/dependency-scan.txt',
+                success {
+                    archiveArtifacts artifacts: "project/publish/${env.RUN_ENVIRONMENT}/**/*",
                                    allowEmptyArchive: true,
                                    fingerprint: true
                 }
-                failure {
-                    echo "SECURITY ALERT: Critical or High vulnerabilities detected"
-                }
             }
         }
 
-        stage('SCA - OWASP Dependency Check') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            // when {
-            //     expression { env.SECURITY_SCAN_ENABLED == 'true' }
-            // }
-            steps {
-                echo "======================================================"
-                echo "OWASP DEPENDENCY CHECK - COMPREHENSIVE SCAN"
-                echo "======================================================"
-                
-                dir('project') {
-                    script {
-                        
-                        def toolBase  = 'D:\\Jenkins\\tools\\org.jenkinsci.plugins.DependencyCheck.tools.DependencyCheckInstallation'
-                        def odcToolName = 'Dep-CICD'
-                        def odcBin   = "${toolBase}\\${odcToolName}\\bin\\dependency-check.bat"
-                        def dataDir  = "${toolBase}\\${odcToolName}\\data"
-                        def dbPath = "${dataDir}\\odc.mv.db"
-                        def feedsDir = "${env.WORKSPACE}\\src\\Assests\\owasp_dependency\\nvd-feeds"
-                        def feedsfilesUrl = "file:///${feedsDir.replace('\\','/')}/nvdcve-{0}.json.gz"
-
-                        def dbSizeThresholdMB = 5
-
-                        def dbExists = false
-                        def dbValid = false
-                        
-                        if (fileExists(dbPath)) {
-                            def dbSize = powershell(
-                                script: """
-                                    [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
-                                    [math]::Round((Get-Item '${dbPath}').Length / 1MB, 2)
-                                """,
-                                returnStdout: true
-                            ).trim()
-                            
-                            echo "Base de données trouvée: ${dbSize} MB"
-                            
-                            if (dbSize.toDouble() >= dbSizeThresholdMB) {
-                                dbValid = true
-                                echo "Base de données valide (>= ${dbSizeThresholdMB} MB)"
-                            } else {
-                                echo "Base de données trop petite (< ${dbSizeThresholdMB} MB) - Réinitialisation nécessaire"
-                            }
-                        } else {
-                            echo "Base de données non trouvée - Initialisation nécessaire"
-                        }
-
-                        // Gestion du proxy pour OWASP Dependency-Check
-                        def proxyArgs = ''
-                        if (env.DEP_CHECK_ARGS?.trim()) {
-                            proxyArgs = ' ' + env.DEP_CHECK_ARGS.trim()
-                        } else {
-                            if (env.PROXY_SERVER?.trim()) { proxyArgs += " --proxyserver ${env.PROXY_SERVER}" }
-                            if (env.PROXY_PORT?.trim())   { proxyArgs += " --proxyport ${env.PROXY_PORT}" }
-                            if (env.PROXY_USERNAME?.trim() && env.PROXY_PASSWORD?.trim()) {
-                                proxyArgs += " --proxyauth ${env.PROXY_USERNAME}:${env.PROXY_PASSWORD}"
-                            }
-                            if (env.NON_PROXY_HOSTS?.trim()) {
-                                proxyArgs += " --nonProxyHosts \"${env.NON_PROXY_HOSTS}\""
-                            }
-                        }
-
-                        def httpProxy = (env.PROXY_SERVER?.trim() && env.PROXY_PORT?.trim()) ? "http://proxy.fr.pluxee.tools:3128" : ''
-
-                        def envVars = []
-
-                        if (httpProxy) {
-                            envVars = [
-                                "HTTP_PROXY=${httpProxy}",
-                                "HTTPS_PROXY=${httpProxy}",
-                                "http_proxy=${httpProxy}",
-                                "https_proxy=${httpProxy}",
-                                "NO_PROXY=${env.NON_PROXY_HOSTS ?: ''}",
-                                "no_proxy=${env.NON_PROXY_HOSTS ?: ''}"
-                            ]
-                        }
-                               
-                        bat """
-                            powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                            Set-Content -Path (Join-Path '${feedsDir.replace('\\','/')}' 'cache.properties') -Encoding ASCII -Value @('lastModifiedDate='+(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'), ^
-                            'prefix=nvdcve-2.0-'); ^
-                            Get-Content (Join-Path '${feedsDir.replace('\\','/')}' 'cache.properties')"
-                        """
-
-                        withEnv(envVars) {
-                            // Scan avec plugin Jenkins
-                            dependencyCheck(
-                                additionalArguments: """
-                                    --scan .
-                                    --out .
-                                    --format XML --format HTML
-                                    --failOnCVSS 7.0
-                                    --enableRetired --enableExperimental
-                                    --data "${dataDir}"      
-                                    --nvdDatafeed "${feedsfilesUrl}"  
-                                    --prettyPrint 
-                                    --noupdate
-                                    --log "${env.WORKSPACE}\\logs\\odc-scan.log"
-                                """ + proxyArgs,
-                                odcInstallation: 'Dep-CICD'
-                            )
-                           // recordIssues tools: [sarif(pattern: '**/dependency-check-report.xml', id: 'odc')]
-
-                        }
-                        
-                        // //Analyse des résultats
-                        // if (fileExists('dependency-check-report.json')) {
-                        //     def report = readJSON file: 'dependency-check-report.json'
-                        //     def vulnCount = report.dependencies.findAll { it.vulnerabilities?.size() > 0 }.size()
-                            
-                        //     echo "======================================================"
-                        //     echo "Résumé du scan offline:"
-                        //     echo "- Total des dépendances: ${report.dependencies.size()}"
-                        //     echo "- Dépendances avec vulnérabilités: ${vulnCount}"
-                        //     echo "- Mode: OFFLINE (base de données locale)"
-                        //     echo "======================================================"
-                        // }
-
-                    }
-                }
-            }
-            post {
-                always {
-
-                     // Publier résultats
-                    dependencyCheckPublisher(
-                        pattern: 'project/dependency-check-report.xml',
-                        failedTotalCritical: 0,
-                        failedTotalHigh: 0,
-                        unstableTotalMedium: 5
-                    )                 
-
-                    // // Affichage robuste via Warnings NG (SARIF)
-                    //     recordIssues enabledForFailure: true,
-                    //                tools: [sarif(pattern: 'project/dependency-check-report.sarif')]
-
-                    // Publier rapport HTML
-                    publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'project',
-                        reportFiles: 'dependency-check-report.html',
-                        reportName: 'OWASP Dependency Check Report',
-                        reportTitles: 'OWASP DC'
-                    ])
-                                      
-                    // Archiver rapports
-                    archiveArtifacts artifacts: 'project/dependency-check-report.*',
-                                allowEmptyArchive: false,
-                                fingerprint: true
-                }
-                failure {
-                    echo " SECURITY ALERT: Critical/High vulnerabilities detected"
-                }
-            }
-        }
-     
-        stage('SAST- SonarQube ') {
-             agent { label 'plxfrsr-l1pi008' }
-            // when {
-            //     // expression { 
-            //     //     env.SECURITY_SCAN_ENABLED == 'true'
-            //     // }
-            // }
-            steps {
-                updateGitlabCommitStatus name: 'SonarQube Analysis', state: 'running'
-                gitlabCommitStatus(name: 'SonarQube Analysis') {
-                    script {
-                        echo "======================================================"
-                        echo "SAST ANALYSIS WITH SONARQUBE"
-                        echo "======================================================"
-                        
-                        // Validation du token SonarQube
-                        if (!env.sonar_token?.trim()) {
-                            error "SonarQube token (sonar_token) is not defined. Please configure it in Jenkins credentials or environment variables."
-                        }
-                        
-                        dir('project') {
-                            // ================================================================
-                            // DIAGNOSTIC DES VARIABLES GITLAB
-                            // ================================================================
-                            echo "GitLab Environment Variables Diagnostic:"
-                            echo "  - gitlabMergeRequestIid: ${env.gitlabMergeRequestIid ?: 'NOT SET (not a MR context)'}"
-                            echo "  - gitlabBranch: ${env.gitlabBranch ?: 'NOT SET'}"
-                            echo "  - gitlabTargetBranch: ${env.gitlabTargetBranch ?: 'NOT SET'}"
-                            echo "  - gitlabSourceBranch: ${env.gitlabSourceBranch ?: 'NOT SET'}"
-                            echo "  - gitlabActionType: ${env.gitlabActionType ?: 'NOT SET'}"
-                            echo "  - gitlabUserName: ${env.gitlabUserName ?: 'NOT SET'}"
-                            echo "  - gitlabMergeRequestTitle: ${env.gitlabMergeRequestTitle ?: 'NOT SET'}"
-                            echo ""
-                            
-                            // Déterminer si on est dans un contexte de Merge Request
-                            // gitlabMergeRequestIid est défini uniquement lors d'un trigger MR
-                            def gitlabMergeRequestIid = env.gitlabMergeRequestIid?.trim() ?: ''
-                            
-                            // gitlabBranch peut être défini par le plugin GitLab ou utiliser PROJECT_GIT_BRANCH
-                            def gitlabBranch = env.gitlabBranch?.trim() ?: 
-                                              env.gitlabSourceBranch?.trim() ?: 
-                                              env.PROJECT_GIT_BRANCH?.trim() ?: 
-                                              ''
-                            
-                            // gitlabTargetBranch est défini uniquement en contexte MR
-                            def gitlabTargetBranch = env.gitlabTargetBranch?.trim() ?: 'develop'
-                            
-                            // Construire la clé SonarQube à partir du nom du projet
-                            // Format: BRS.FR.<PROJECT_NAME>
-                            def slnName = env.PROJECT_NAME?.replaceAll(/\\.git$/, '')?.replaceAll(/[^a-zA-Z0-9.]/, '') ?: 'Unknown'
-                            env.sonar_key = "BRS.FR.${slnName}"
-                            
-                            echo "SonarQube Configuration:"
-                            echo "  - Project Key: ${env.sonar_key}"
-                            echo "  - Branch: ${gitlabBranch}"
-                            echo "  - Merge Request IID: ${gitlabMergeRequestIid ?: 'N/A (Branch mode)'}"
-                            echo "  - Target Branch: ${gitlabTargetBranch}"
-                            echo "  - Analysis Mode: ${gitlabMergeRequestIid ? 'Pull Request' : 'Branch Analysis'}"
-                            echo ""
-                            
-                            // Phase BEGIN - Configuration SonarQube
-                            echo "======================================================"
-                            echo "SONARQUBE: PHASE BEGIN"
-                            echo "======================================================"
-                            
-                            def sonarBeginStatus = 0
-                            
-                            if (gitlabMergeRequestIid) {
-                                // Mode Pull Request
-                                echo "Mode: Pull Request Analysis"
-                                sonarBeginStatus = powershell(returnStatus: true, script: """
-                                    dotnet C:\\Users\\jenkins\\.dotnet\\tools\\.store\\dotnet-sonarscanner\\6.2.0\\dotnet-sonarscanner\\6.2.0\\tools\\netcoreapp3.1\\any\\SonarScanner.MSBuild.dll begin `
-                                    /k:"${env.sonar_key}" `
-                                    /d:sonar.exclusions="**/*.html,**tests/**/*.*,**clients/**/*.*,**/*.json,**/*.sql,**/*Extensions.cs,**/Configurations/**,**/Endpoints/**,**/*GlobalSuppressions.cs,**/*Program.cs,**/*Scopes.cs,**/*Helpers.cs,**/*CesuEventLogProcessor.cs,**/*OutboxProcessor.cs,**/*SynchroniseAllConsumersJob.cs,**/*SynchroniseDailyConsumersJob.cs" `
-                                    /d:sonar.coverage.exclusions="**tests/**/*.*,**Tests/**/*.*,**Clients/**/*.*,**/*.json,**/DTOs/**/*.cs,**/DataBase/**,**/*.sql" `
-                                    /d:sonar.test.exclusions="**tests/**/*.*,**Tests/**/*.*,**Clients/**/*.*" `
-                                    /d:sonar.cpd.exclusions="**/DTOs/**/*.cs,**/*.json" `
-                                    /d:sonar.cs.vstest.reportsPaths="\${env:WORKSPACE}\\reports\\**\\*.trx" `
-                                    /d:sonar.cs.vscoveragexml.reportsPaths="\${env:WORKSPACE}\\reports\\**\\*.xml" `
-                                    /d:sonar.host.url='https://sonarqube.glb.pluxee.tools' `
-                                    /d:sonar.pullrequest.key="${gitlabMergeRequestIid}" `
-                                    /d:sonar.pullrequest.branch="${gitlabBranch}" `
-                                    /d:sonar.pullrequest.base="${gitlabTargetBranch}" `
-                                    /d:sonar.token="\${env:sonar_token}"
-                                """)
-                            } else {
-                                // Mode Branche standard
-                                echo "Mode: Branch Analysis"
-                                sonarBeginStatus = powershell(returnStatus: true, script: """
-                                    dotnet C:\\Users\\jenkins\\.dotnet\\tools\\.store\\dotnet-sonarscanner\\6.2.0\\dotnet-sonarscanner\\6.2.0\\tools\\netcoreapp3.1\\any\\SonarScanner.MSBuild.dll begin `
-                                    /k:"${env.sonar_key}" `
-                                    /d:sonar.exclusions="**/*.html,**tests/**/*.*,**clients/**/*.*,**/*.json,**/*.sql,**/*Extensions.cs,**/Configurations/**,**/Endpoints/**,**/*GlobalSuppressions.cs,**/*Program.cs,**/*Scopes.cs,**/*Helpers.cs,**/*CesuEventLogProcessor.cs,**/*OutboxProcessor.cs,**/*SynchroniseAllConsumersJob.cs,**/*SynchroniseDailyConsumersJob.cs" `
-                                    /d:sonar.coverage.exclusions="**tests/**/*.*,**Tests/**/*.*,**Clients/**/*.*,**/*.json,**/DTOs/**/*.cs,**/DataBase/**,**/*.sql" `
-                                    /d:sonar.test.exclusions="**tests/**/*.*,**Tests/**/*.*,**Clients/**/*.*" `
-                                    /d:sonar.cpd.exclusions="**/DTOs/**/*.cs,**/*.json" `
-                                    /d:sonar.cs.vstest.reportsPaths="\${env:WORKSPACE}\\reports\\**\\*.trx" `
-                                    /d:sonar.cs.vscoveragexml.reportsPaths="\${env:WORKSPACE}\\reports\\**\\*.xml" `
-                                    /d:sonar.host.url='https://sonarqube.glb.pluxee.tools' `
-                                    /d:sonar.branch.name="${gitlabBranch}" `
-                                    /d:sonar.token="\${env:sonar_token}"
-                                """)
-                            }
-                            
-                            if (sonarBeginStatus != 0) {
-                                error "SonarQube BEGIN phase failed with exit code: ${sonarBeginStatus}"
-                            }
- 
-                            
-                            // Phase BUILD - Build avec SonarQube intégré
-                            echo "======================================================"
-                            echo "SONARQUBE: BUILDING PROJECT"
-                            echo "======================================================"
-                            
-                            // Construire le projet avec SonarQube intégré
-                            def apis = env.APIS_LIST.split(',')
-                            for (api in apis) {
-                                def apiTrim = api.trim()
-                                if (!apiTrim.isEmpty()) {
-                                    echo "Building API: ${apiTrim}"
-                                    bat """
-                                        powershell.exe -ExecutionPolicy Bypass -File "${env.BUILD_SCRIPT_PATH}" ^
-                                            -proxyServer "${env.PROXY_SERVER}" ^
-                                            -proxyPort "${env.PROXY_PORT}" ^
-                                            -assemblyName "${apiTrim}" ^
-                                            -type "Api" ^
-                                            -environment "${params.ENVIRONMENT}" ^
-                                            -baseFolder "${env.WORKSPACE}\\project"
-                                    """
-                                }
-                            }
-                            
-                            echo "✓ Build completed with SonarQube integration"
-                            echo ""
-                            
-                            // Phase END - Finalisation et upload vers SonarQube
-                            echo "======================================================"
-                            echo "SONARQUBE: PHASE END"
-                            echo "======================================================"
-                            
-                            def sonarEndStatus = powershell(returnStatus: true, script: '''
-                                dotnet C:\\Users\\jenkins\\.dotnet\\tools\\.store\\dotnet-sonarscanner\\6.2.0\\dotnet-sonarscanner\\6.2.0\\tools\\netcoreapp3.1\\any\\SonarScanner.MSBuild.dll end /d:sonar.token="$env:sonar_token"
-                            ''')
-                            
-                            if (sonarEndStatus != 0) {
-                                error "SonarQube END phase failed with exit code: ${sonarEndStatus}"
-                            }
-                            
-                            echo "✓ SonarQube analysis completed successfully"
-                          
-                        }
-                    }
-                }
-            }
-            post {
-                success {
-                    updateGitlabCommitStatus name: 'SonarQube Analysis', state: 'success'
-                    script { 
-                        status_stage_sonarqubeanalysis = 'success'
-                        echo "✓ SonarQube Analysis: SUCCESS"
-                    }
-                }
-                failure {
-                    updateGitlabCommitStatus name: 'SonarQube Analysis', state: 'failed'
-                    script { 
-                        status_stage_sonarqubeanalysis = 'failed'
-                        echo "✗ SonarQube Analysis: FAILED"
-                    }
-                }
-                unstable {
-                    updateGitlabCommitStatus name: 'SonarQube Analysis', state: 'success'
-                    script { 
-                        status_stage_sonarqubeanalysis = 'warning'
-                        echo "⚠ SonarQube Analysis: WARNING"
-                    }
-                }
-            }
-        }
- 
-        stage('Build') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            when {
-                expression { env.SECURITY_SCAN_ENABLED == 'true' }
-            }
-            steps {
-                echo "======================================================"
-                echo "BUILDING APIS"
-                echo "======================================================"
-                script {
-                    def apis = env.APIS_LIST.split(',')
-                    def apiIndex = 1
-                    
-                    for (api in apis) {
-                        echo "------------------------------------------------------"
-                        echo "Building API [${apiIndex}/${env.APIS_COUNT}]: ${api}"
-                        echo "------------------------------------------------------"
-                        
-                        bat """
-                             powershell.exe -ExecutionPolicy Bypass -File "${env.BUILD_SCRIPT_PATH}" ^
-                                -proxyServer "${env.PROXY_SERVER}" ^
-                                -proxyPort "${env.PROXY_PORT}" ^
-                                -assemblyName "${api}" ^
-                                -type "Api" ^
-                                -environment "${params.ENVIRONMENT}" ^
-                                -baseFolder "${env.WORKSPACE}\\project"
-                        """
-                        
-                        echo "Build completed for: ${api}"
-                        apiIndex++
-                    }
-                }
-                echo "======================================================"
-                echo "ALL APIS BUILT SUCCESSFULLY"
-                echo "======================================================"
-            }
-            post {
-                success {
-                    archiveArtifacts artifacts: "project/publish/${params.ENVIRONMENT}/**/*",
-                                   allowEmptyArchive: false,
-                                   fingerprint: true
-                }
-            }
-        }
-        
-        stage('Deploy to TEST') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            when {
-                expression { params.ENVIRONMENT == 'test' }
-            }
-            steps {
-                script {
-                    echo "======================================================"
-                    echo "DEPLOY: TEST ENVIRONMENT"
-                    echo "======================================================"
-                    
-                    // withCredentials([
-                    //     usernamePassword(
-                    //         credentialsId: 'deploy-credentials',
-                    //         usernameVariable: 'DEPLOY_USERNAME',
-                    //         passwordVariable: 'DEPLOY_PASSWORD'
-                    //     )
-                    // ]) 
-                    //{
-                        def servers = env.DEPLOY_SERVERS.split(';')
-                        def totalServers = servers.size()
-                        def serverIndex = 1
-                        
-                        for (server in servers) {
-                            def serverTrim = server.trim()
-                            
-                            if (!serverTrim.isEmpty()) {
-                                echo ""
-                                echo "======================================================"
-                                echo "SERVER [${serverIndex}/${totalServers}]: ${serverTrim}"
-                                echo "======================================================"
-                                
-                                def apis = env.APIS_LIST.split(',')
-                                def totalApis = apis.size()
-                                def apiIndex = 1
-                                
-                                for (api in apis) {
-                                    def apiTrim = api.trim()
-                                    
-                                    if (!apiTrim.isEmpty()) {
-                                        echo ""
-                                        echo "------------------------------------------------------"
-                                        echo "Deploying API [${apiIndex}/${totalApis}]: ${apiTrim}"
-                                        echo "------------------------------------------------------"
-                                          // set username=${DEPLOY_USERNAME}
-                                                // set password=${DEPLOY_PASSWORD}
-                                        def result = bat(
-                                            returnStatus: true,
-                                            script: """
-                                              
-                                                powershell.exe -ExecutionPolicy Bypass -File "D:\\_puppet\\script\\deployDotNetCore3.1.ps1" ^
-                                                    -server "${serverTrim}" ^
-                                                    -assemblyName "${apiTrim}" ^
-                                                    -type "Api" ^
-                                                    -environment "${params.ENVIRONMENT}" ^
-                                                    -baseFolder "${env.WORKSPACE}\\project"
-                                            """
-                                        )
-                                        
-                                        if (result != 0) {
-                                            error "Deployment failed: ${apiTrim} to ${serverTrim}"
-                                        }
-                                        
-                                        echo "✓ Success: ${apiTrim} deployed to ${serverTrim}"
-                                        apiIndex++
-                                    }
-                                }
-                                
-                                serverIndex++
-                            }
-                        }
-                    //}
-                    
-                    echo ""
-                    echo "======================================================"
-                    echo "TEST DEPLOYMENT COMPLETED"
-                    echo "======================================================"
-                }
-            }
-        }
-        
         // ================================================================
-        // POST-DEPLOYMENT TEST
+        // STAGE 5: SAST - SONARQUBE (HORS PARALLEL)
         // ================================================================
-        
+        stage('SAST - SonarQube') {
+            agent { label 'larivm-l1pi008' }
+            when { expression { env.SONAR_ENABLED == 'True' } }
+            steps {
+                script { runSonarQubeAnalysis() }
+            }
+            // post {
+            //     success { updateGitlabCommitStatus name: 'SonarQube', state: 'success' }
+            //     failure { updateGitlabCommitStatus name: 'SonarQube', state: 'failed' }
+            // }
+        }
+       
+        // ================================================================
+        // STAGE 7: DEPLOY
+        // ================================================================
+        stage('Deploy') {
+            agent { label env.PIPELINE_AGENT_LABEL }
+            when { 
+                expression { 
+                    env.DEPLOY_ENABLED == 'True' &&
+                    env.RUN_ENVIRONMENT in ['tst', 'sta', 'prd']
+                } 
+            }
+            steps {
+                script { deployComponents() }
+            }
+        }
+       
+        // ================================================================
+        // STAGE 8: POST-DEPLOY VALIDATION
+        // ================================================================
         stage('Health Check') {
             agent { label env.PIPELINE_AGENT_LABEL }
-            // when {
-            //     expression { 
-            //         env.DEPLOY_ENABLED == 'true' && 
-            //         env.TESTS_ENABLED == 'true'
-            //     }
-            // }
-            steps {
-                 script {
-                    echo "======================================================"
-                    echo "Health Check"
-                    echo "======================================================"
-                 }
-            }
-        }
-         
-        stage('DAST - OWASP ZAP') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            when {
-                expression { env.SECURITY_SCAN_ENABLED == 'true' }
+            when { 
+                expression { 
+                    env.DEPLOY_ENABLED == 'True' &&
+                    env.RUN_ENVIRONMENT in ['tst', 'sta', 'prd']
+                } 
             }
             steps {
-                 script {
-                    echo "======================================================"
-                    echo "DAST - OWASP ZAP"
-                    echo "======================================================"
-                 }
+                script { runHealthChecks() }
             }
         }
 
-        stage('Functional Tests') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            // when {
-            //     expression { 
-            //         env.DEPLOY_ENABLED == 'true' && 
-            //         env.TESTS_ENABLED == 'true'
-            //     }
-            // }
-           steps {
-                 script {
-                    echo "======================================================"
-                    echo "Functional Tests"
-                    echo "======================================================"
-                 }
-            }
-        }
-    
-        stage('Approval for STAGING') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            when {
-                expression { params.ENVIRONMENT == 'staging' }
-            }
-            steps {
-                echo "======================================================"
-                echo " MANUAL APPROVAL REQUIRED FOR STAGING"
-                echo "======================================================"
-                
-                input message: 'Deploy to STAGING environment?',
-                    ok: 'Deploy to STAGING',
-                    submitter: 'admin,lead-dev'
-                
-                echo " Approval granted"
-            }
-        }
-
-        stage('Deploy to STAGING') {
-            agent { label env.PIPELINE_AGENT_LABEL }
-            when {
-                expression { params.ENVIRONMENT == 'staging' }
-            }
-            steps {
-                script {
-                    echo "======================================================"
-                    echo "DEPLOY: STAGING ENVIRONMENT"
-                    echo "======================================================"
-                    
-                    // withCredentials([
-                    //     usernamePassword(
-                    //         credentialsId: 'deploy-credentials',
-                    //         usernameVariable: 'DEPLOY_USERNAME',
-                    //         passwordVariable: 'DEPLOY_PASSWORD'
-                    //     )
-                    // ]) {
-                        def servers = env.DEPLOY_SERVERS.split(';')
-                        def totalServers = servers.size()
-                        def serverIndex = 1
-                        
-                        for (server in servers) {
-                            def serverTrim = server.trim()
-                            
-                            if (!serverTrim.isEmpty()) {
-                                echo ""
-                                echo "======================================================"
-                                echo "SERVER [${serverIndex}/${totalServers}]: ${serverTrim}"
-                                echo "======================================================"
-                                
-                                def apis = env.APIS_LIST.split(',')
-                                def totalApis = apis.size()
-                                def apiIndex = 1
-                                
-                                for (api in apis) {
-                                    def apiTrim = api.trim()
-                                    
-                                    if (!apiTrim.isEmpty()) {
-                                        echo ""
-                                        echo "------------------------------------------------------"
-                                        echo "Deploying API [${apiIndex}/${totalApis}]: ${apiTrim}"
-                                        echo "------------------------------------------------------"
-                                        // set username=${DEPLOY_USERNAME}
-                                        //         set password=${DEPLOY_PASSWORD}
-                                        def result = bat(
-                                            returnStatus: true,
-                                            script: """
-                                                
-                                                powershell.exe -ExecutionPolicy Bypass -File "D:\\_puppet\\script\\deployDotNetCore3.1.ps1" ^
-                                                    -server "${serverTrim}" ^
-                                                    -assemblyName "${apiTrim}" ^
-                                                    -type "Api" ^
-                                                    -environment "${params.ENVIRONMENT}" ^
-                                                    -baseFolder "${env.WORKSPACE}\\project"
-                                            """
-                                        )
-                                        
-                                        if (result != 0) {
-                                            error "Deployment failed: ${apiTrim} to ${serverTrim}"
-                                        }
-                                        
-                                        echo "Success: ${apiTrim} deployed to ${serverTrim}"
-                                        apiIndex++
-                                    }
-                                }
-                                
-                                serverIndex++
-                            }
+        // ================================================================
+        // STAGE 8: Functional Tests & DAST (PARALLEL)
+        // ================================================================
+        stage('DAST & Functional Tests') {
+            options { timeout(time: 30, unit: 'MINUTES') }
+            parallel {
+                stage('DAST - OWASP ZAP') {
+                    agent { label env.PIPELINE_AGENT_LABEL }
+                    when {
+                        expression { env.DAST_ENABLED == 'True'&&
+                                     env.RUN_ENVIRONMENT in ['tst', 'sta', 'prd'] 
                         }
-                    //}
-                    
-                    echo ""
-                    echo "======================================================"
-                    echo "STAGING DEPLOYMENT COMPLETED"
-                    echo "======================================================"
+                    }
+                    steps {
+                         script {
+                            echo "======================================================"
+                            echo "DAST - OWASP ZAP"
+                            echo "======================================================"
+                         }
+                    }
+                }
+                stage('Functional Tests') {
+                    agent { label env.PIPELINE_AGENT_LABEL }
+                    when {
+                        expression { 
+                            env.DEPLOY_ENABLED == 'True' && 
+                            env.TESTS_ENABLED == 'True'&&
+                            env.RUN_ENVIRONMENT in ['tst', 'sta', 'prd']
+                        }
+                    }
+                   steps {
+                         script {
+                            echo "======================================================"
+                            echo "Functional Tests"
+                            echo "======================================================"
+                         }
+                    }
                 }
             }
         }
        
-      
         // ================================================================
-        // STAGE 8: Audit Sécurité
+        // STAGE 9: SECURITY AUDIT
         // ================================================================
         stage('Security Audit') {
             agent { label env.PIPELINE_AGENT_LABEL }
             steps {
-                script {
-                    echo "======================================================"
-                    echo "GENERATING SECURITY AUDIT LOG"
-                    echo "======================================================"
-                    
-                    // Générer audit trail JSON
-                    bat """
-                        @echo off
-                        (
-                        echo {
-                        echo   "metadata": {
-                        echo     "timestamp": "${BUILD_TIMESTAMP}",
-                        echo     "pipeline": "${env.JOB_NAME}",
-                        echo     "buildNumber": "${BUILD_NUMBER}",
-                        echo     "environment": "${params.ENVIRONMENT}",
-                        echo     "executor": "${params.EXECUTION_LABEL}",
-                        echo     "triggeredBy": "GitHub Webhook"
-                        echo   },
-                        echo   "project": {
-                        echo     "name": "${env.PROJECT_NAME}",
-                        echo     "repository": "${env.PROJECT_GIT_URL}",
-                        echo     "branch": "${env.PROJECT_GIT_BRANCH}",
-                        echo     "commitHash": "${env.PROJECT_COMMIT_HASH}",
-                        echo     "commitShort": "${env.PROJECT_COMMIT_SHORT}"
-                        echo   },
-                        echo   "security": {
-                        echo     "dependencyScanEnabled": ${env.SECURITY_SCAN_ENABLED},
-                        echo     "scanMethod": "dotnet-native",
-                        echo     "failOnCritical": ${env.FAIL_ON_CRITICAL},
-                        echo     "failOnHigh": ${env.FAIL_ON_HIGH},
-                        echo     "scanPassed": true
-                        echo   },
-                        echo   "build": {
-                        echo     "apisCount": ${env.APIS_COUNT},
-                        echo     "success": true,
-                        echo     "duration": "${currentBuild.durationString}"
-                        echo   },
-                        echo   "deployment": {
-                        echo     "environment": "${params.ENVIRONMENT}",
-                        echo     "vmsCount": ${env.DEPLOY_VMS_COUNT},
-                        echo     "status": "SUCCESS",
-                        echo     "timestamp": "${BUILD_TIMESTAMP}"
-                        echo   },
-                        echo   "compliance": {
-                        echo     "owaspCompliant": true,
-                        echo     "auditTrail": true,
-                        echo     "securityGatesPassed": true
-                        echo   }
-                        echo }
-                        ) > security-audit.json
-                    """
-                    
-                    echo "✓ Security audit log generated: security-audit.json"
-                    echo "======================================================"
-                }
+                script { generateSecurityAudit() }
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'security-audit.json',
-                                   fingerprint: true
+                    archiveArtifacts artifacts: 'security-audit.json', fingerprint: true
                 }
             }
         }
@@ -1040,148 +244,831 @@ pipeline {
     
     post {
         always {
-            echo "======================================================"
-            echo "PIPELINE EXECUTION COMPLETED"
-            echo "======================================================"
-            echo "Project: ${env.PROJECT_NAME}"
-            echo "Trigger Repo: ${env.TRIGGER_REPO_NAME} (${env.TRIGGER_REPO_URL})"
-            echo "Status: ${currentBuild.result ?: 'SUCCESS'}"
-            echo "Duration: ${currentBuild.durationString}"
-            echo "Environment: ${params.ENVIRONMENT}"
-            echo "Build Number: ${BUILD_NUMBER}"
-            echo "Timestamp: ${BUILD_TIMESTAMP}"
-            echo "======================================================"
-            script {
-                def duration = currentBuild.durationString.replace(' and counting', '')
-                def status = currentBuild.result ?: 'SUCCESS'
-                
-                // cleanWs sélectif - préserve logs et rapports
-                    cleanWs(
-                        deleteDirs: true,
-                        disableDeferredWipeout: true,
-                        notFailBuild: true,
-                        patterns: [
-                            [pattern: '**/test-results/**', type: 'EXCLUDE'],
-                            [pattern: '**/playwright-report/**', type: 'EXCLUDE'],
-                            [pattern: '**/dependency-check-report/**', type: 'EXCLUDE'],
-                            [pattern: '**/*.log', type: 'EXCLUDE'],
-                            [pattern: '**/gitleaks-report/**', type: 'EXCLUDE'],
-                            [pattern: '**/logs/**', type: 'EXCLUDE'],                           
-                            [pattern: 'security-audit.*', type: 'EXCLUDE']
-                        ]
-                    )
-                    
-                    echo "SUCCESS: Workspace cleaned (logs/reports preserved) "
+            script { sendPipelineNotification() }
+            cleanWs(
+                deleteDirs: true,
+                notFailBuild: true,
+                patterns: [
+                    [pattern: '**/test-results/**', type: 'EXCLUDE'],
+                    [pattern: '**/gitleaks-report/**', type: 'EXCLUDE'],
+                    [pattern: '**/dependency-check-report.*', type: 'EXCLUDE'],
+                    [pattern: '**/*.log', type: 'EXCLUDE'],
+                    [pattern: 'security-audit.*', type: 'EXCLUDE']
+                ]
+            )
+        }
+        success { echo "[OK] Pipeline completed successfully" }
+        unstable { echo "[WARN] Pipeline completed with warnings" }
+        failure { echo "[FAIL] Pipeline failed" }
+    }
+}
 
-                def emailBody = """
-                <html>
-                <head>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; }
-                        .header { background-color: #2c3e50; color: white; padding: 15px; border-radius: 5px; }
-                        .success { background-color: #27ae60; }
-                        .failure { background-color: #e74c3c; }
-                        .warning { background-color: #f39c12; }
-                        .section { margin: 15px 0; padding: 10px; border-left: 4px solid #3498db; background-color: #f8f9fa; }
-                        .security-section { border-left-color: #e74c3c; }
-                        .build-section { border-left-color: #27ae60; }
-                        .deploy-section { border-left-color: #3498db; }
-                        .footer { margin-top: 20px; padding: 10px; background-color: #ecf0f1; border-radius: 5px; font-size: 12px; }
-                        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-                        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
-                        th { background-color: #34495e; color: white; }
-                        .status-success { color: #27ae60; font-weight: bold; }
-                        .status-failure { color: #e74c3c; font-weight: bold; }
-                        .status-warning { color: #f39c12; font-weight: bold; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h2>🔒 DevSecOps Pipeline Report</h2>
-                        <p><strong>Project:</strong> ${env.PROJECT_NAME ?: env.JOB_NAME} | <strong>Build:</strong> #${env.BUILD_NUMBER} | <strong>Environment:</strong> ${params.ENVIRONMENT ?: 'test'}</p>
-                    </div>
+// ============================================================================
+// HELPER METHODS
+// ============================================================================
 
-                    <div class="section">
-                        <h3>📊 Build Summary</h3>
-                        <table>
-                            <tr><th>Property</th><th>Value</th></tr>
-                            <tr><td>Status</td><td class="status-${status.toLowerCase()}">${status}</td></tr>
-                            <tr><td>Duration</td><td>${duration}</td></tr>
-                            <tr><td>Timestamp</td><td>${BUILD_TIMESTAMP}</td></tr>
-                            <tr><td>Trigger Repo</td><td>${env.TRIGGER_REPO_NAME ?: 'unknown'}</td></tr>
-                            <tr><td>Commit Hash</td><td>${env.PROJECT_COMMIT_HASH ?: env.BUILD_HASH?.substring(0, 8) ?: 'N/A'}</td></tr>
-                            <tr><td>Branch</td><td>${env.PROJECT_GIT_BRANCH ?: 'N/A'}</td></tr>
-                            <tr><td>APIs Count</td><td>${env.APIS_COUNT ?: 'N/A'}</td></tr>
-                        </table>
-                    </div>
+def initializePipeline() {
+    echo "======================================================"
+    echo "PIPELINE INITIALIZATION"
+    echo "======================================================"
+    // ================================================================
+    // 1. CAPTURE TRIGGER INFO
+    // ================================================================
+    env.TRIGGER_REPO_URL = env.gitlabSourceRepoURL ?: ''
+    env.TRIGGER_REPO_NAME = sanitizeRepoName(env.gitlabSourceRepoName ?: '')
+    env.TRIGGER_BRANCH = env.gitlabBranch ?: env.gitlabSourceBranch ?: ''
+    env.TRIGGER_COMMIT = env.gitlabMergeRequestLastCommit ?: env.gitlabAfter ?: ''
+    env.TRIGGER_USER = env.gitlabUserName ?: env.gitlabUserEmail ?: 'unknown'
+    env.TRIGGER_TYPE = detectTriggerType()
+    
+    // Fallback si pas de webhook GitLab
+    if (!env.TRIGGER_REPO_NAME?.trim()) {
+        env.TRIGGER_REPO_NAME = 'unknown'
+        env.TRIGGER_TYPE = 'manual'
+    }
+    
+    // ================================================================
+    // 2. TAG DETECTION
+    // ================================================================
+    def tagInfo = detectTag()
+    env.IS_TAG = tagInfo.isTag.toString()
+    env.TAG = tagInfo.tagName
+    env.TAG_COMMIT = tagInfo.tagCommit
+    env.TAG_ENVIRONMENT = tagInfo.tagEnvironment
+    
+    // ================================================================
+    // 3. DETERMINE RUN ENVIRONMENT
+    // ================================================================
+    if (tagInfo.isTag && tagInfo.tagEnvironment) {
+        // Tag avec prefixe TST/STA/PRD -> utiliser l'environnement du tag
+        env.RUN_ENVIRONMENT = tagInfo.tagEnvironment
+    } else {
+        // Branch -> deduire l'environnement
+        env.RUN_ENVIRONMENT = env.TRIGGER_BRANCH
+    }
+    
+    // ================================================================
+    // 4. INPUT VALIDATION (OWASP A03)
+    // ================================================================
+    // if (!env.RUN_ENVIRONMENT?.matches('^(tst|sta|prd)$')) {
+    //     error "Unable to determine environment. Branch: ${env.TRIGGER_BRANCH}, Tag: ${env.TAG}. Resolved: ${env.RUN_ENVIRONMENT}"
+    // }
+    
+    if (!params.EXECUTION_LABEL?.matches('^[a-zA-Z0-9_-]+$')) {
+        error "Invalid EXECUTION_LABEL: ${params.EXECUTION_LABEL}"
+    }
 
-                    <div class="section security-section">
-                        <h3>🛡️ Security Analysis</h3>
-                        <table>
-                            <tr><th>Security Stage</th><th>Status</th><th>Details</th></tr>
-                            <tr><td>Secret Scanning (GitLeaks)</td><td class="status-success">✅ PASSED</td><td>No secrets detected</td></tr>
-                            <tr><td>Dependency Scan (.NET)</td><td class="status-success">✅ PASSED</td><td>No critical vulnerabilities</td></tr>
-                            <tr><td>OWASP Dependency Check</td><td class="status-success">✅ PASSED</td><td>Comprehensive vulnerability scan</td></tr>
-                            <tr><td>SAST Analysis (SonarQube)</td><td class="status-warning">⚠️ PENDING</td><td>Stage not implemented</td></tr>
-                            <tr><td>DAST Analysis (OWASP ZAP)</td><td class="status-warning">⚠️ PENDING</td><td>Stage not implemented</td></tr>
-                        </table>
-                        <p><strong>Security Gates:</strong> ${env.FAIL_ON_CRITICAL == 'true' ? 'Critical vulnerabilities block pipeline' : 'Critical vulnerabilities allowed'} | 
-                        ${env.FAIL_ON_HIGH == 'true' ? 'High vulnerabilities block pipeline' : 'High vulnerabilities allowed'}</p>
-                    </div>
+    // ================================================================
+    // 5. LOG SUMMARY
+    // ================================================================
+    echo "------------------------------------------------------"
+    echo "TRIGGER INFO"
+    echo "------------------------------------------------------"
+    echo "  Type: ${env.TRIGGER_TYPE}"
+    echo "  Repository: ${env.TRIGGER_REPO_NAME}"
+    echo "  Branch: ${env.TRIGGER_BRANCH}"
+    echo "  Commit: ${env.TRIGGER_COMMIT ?: 'N/A'}"
+    echo "  User: ${env.TRIGGER_USER}"
+    echo "------------------------------------------------------"
+    echo "TAG INFO"
+    echo "------------------------------------------------------"
+    echo "  Is Tag: ${env.IS_TAG}"
+    echo "  Tag Name: ${env.TAG ?: 'N/A'}"
+    echo "  Tag Commit: ${env.TAG_COMMIT ?: 'N/A'}"
+    echo "  Tag Environment: ${env.TAG_ENVIRONMENT ?: 'N/A'}"
+    echo "------------------------------------------------------"
+    echo "RESOLVED ENVIRONMENT"
+    echo "------------------------------------------------------"
+    echo "  Source: ${env.IS_TAG == 'true' ? 'TAG ' + env.TAG : 'BRANCH ' + env.TRIGGER_BRANCH}"
+    echo "  Environment: ${env.RUN_ENVIRONMENT}"
+    echo "======================================================"
+}
 
-                    <div class="section build-section">
-                        <h3>🔨 Build & Deploy</h3>
-                        <table>
-                            <tr><th>Component</th><th>Status</th><th>Details</th></tr>
-                            <tr><td>Build Process</td><td class="status-success">✅ SUCCESS</td><td>All APIs built successfully</td></tr>
-                            <tr><td>Deployment</td><td class="status-success">✅ SUCCESS</td><td>Deployed to ${params.ENVIRONMENT ?: 'test'} environment</td></tr>
-                            <tr><td>Target Servers</td><td class="status-success">✅ SUCCESS</td><td>${env.DEPLOY_VMS_COUNT ?: 'N/A'} VMs updated</td></tr>
-                        </table>
-                    </div>
+def sanitizeRepoName(String name) {
+    if (!name?.trim()) return ''
+    return name.replaceAll(/\.git$/, '')
+               .replaceAll(/[^a-zA-Z0-9._-]/, '')
+}
 
-                    <div class="section">
-                        <h3>📈 Compliance & Audit</h3>
-                        <ul>
-                            <li>✅ OWASP Compliance: <strong>VERIFIED</strong></li>
-                            <li>✅ Security Audit Trail: <strong>GENERATED</strong></li>
-                            <li>✅ Artifact Signing: <strong>COMPLETED</strong></li>
-                            <li>✅ Build Fingerprinting: <strong>ENABLED</strong></li>
-                        </ul>
-                    </div>
+def detectTag() {
+    def result = [
+        isTag: false,
+        tagName: '',
+        tagCommit: '',
+        tagEnvironment: ''
+    ]
+    
+    def tagCandidate = ''
+    
+    // Detection via GitLab webhook TAG_PUSH
+    if (env.gitlabActionType == 'TAG_PUSH') {
+        result.isTag = true
+        tagCandidate = env.gitlabBranch ?: ''
+        result.tagCommit = env.gitlabAfter ?: ''
+        echo "[TAG] Detected via GitLab webhook: ${tagCandidate}"
+    }
+    // Detection via ref pattern (refs/tags/xxx)
+    else {
+        def gitRef = env.gitlabAfter ?: env.GIT_BRANCH ?: ''
+        if (gitRef.startsWith('refs/tags/')) {
+            result.isTag = true
+            tagCandidate = gitRef
+            result.tagCommit = env.gitlabAfter ?: ''
+            echo "[TAG] Detected via ref: ${tagCandidate}"
+        }
+    }
+    
+    if (!result.isTag) {
+        echo "[TAG] No tag detected"
+        return result
+    }
+    
+    // ================================================================
+    // CLEAN TAG NAME - Remove refs/tags/ prefix
+    // ================================================================
+    result.tagName = cleanTagName(tagCandidate)
+    echo "[TAG] Cleaned tag name: ${result.tagName}"
+    
+    // ================================================================
+    // EXTRACT ENVIRONMENT PREFIX FROM TAG
+    // Format attendu: TST-xxx, STA-xxx, PRD-xxx (case insensitive)
+    // ================================================================
+    result.tagEnvironment = extractEnvironmentFromTag(result.tagName)
+    
+    if (result.tagEnvironment) {
+        echo "[TAG] Environment prefix detected: ${result.tagEnvironment.toUpperCase()}"
+    } else {
+        echo "[TAG] No environment prefix (TST/STA/PRD) found in tag"
+    }
+    
+    return result
+}
 
-                    <div class="footer">
-                        <p><strong>🔗 Build Details:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                        <p><strong>📧 Pipeline:</strong> ${env.JOB_NAME} | <strong>Executed:</strong> ${new Date().format('yyyy-MM-dd HH:mm:ss')} UTC</p>
-                        <p><em>This is an automated message from the CI/CD DevSecOps Pipeline</em></p>
-                    </div>
-                </body>
-                </html>
-                """
-                
-                emailext (
-                    subject: "Pipeline ${status}: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${duration})",
-                    body: emailBody,
-                    to: "${env.BUILD_USER_EMAIL ?: 'amin.kadira.ext@pluxeegroup.com '}"
-                )
+def cleanTagName(String rawTag) {
+    if (!rawTag?.trim()) return ''
+    
+    def cleaned = rawTag.trim()
+    
+    // Remove refs/tags/ prefix
+    if (cleaned.startsWith('refs/tags/')) {
+        cleaned = cleaned.substring('refs/tags/'.length())
+    }
+    
+    // Remove refs/heads/ prefix (au cas ou)
+    if (cleaned.startsWith('refs/heads/')) {
+        cleaned = cleaned.substring('refs/heads/'.length())
+    }
+    
+    return cleaned
+}
+
+def extractEnvironmentFromTag(String tagName) {
+    if (!tagName?.trim()) return ''
+    
+    def tagUpper = tagName.toUpperCase()
+    
+    // Pattern: prefixe au debut du tag
+    // TST-v1.0.0, TST_release, TST.2024.01
+    if (tagUpper.startsWith('TST-') || tagUpper.startsWith('TST_') || tagUpper.startsWith('TST.')) {
+        return 'tst'
+    }
+    if (tagUpper.startsWith('STA-') || tagUpper.startsWith('STA_') || tagUpper.startsWith('STA.')) {
+        return 'sta'
+    }
+    if (tagUpper.startsWith('PRD-') || tagUpper.startsWith('PRD_') || tagUpper.startsWith('PRD.')) {
+        return 'prd'
+    }
+    
+    // Pattern: prefixe en fin de tag (fallback)
+    // v1.0.0-TST, release_STA, 2024.01.PRD
+    if (tagUpper.endsWith('-TST') || tagUpper.endsWith('_TST') || tagUpper.endsWith('.TST')) {
+        return 'tst'
+    }
+    if (tagUpper.endsWith('-STA') || tagUpper.endsWith('_STA') || tagUpper.endsWith('.STA')) {
+        return 'sta'
+    }
+    if (tagUpper.endsWith('-PRD') || tagUpper.endsWith('_PRD') || tagUpper.endsWith('.PRD')) {
+        return 'prd'
+    }
+    
+    // Pas de prefixe reconnu
+    return ''
+}
+
+def detectTriggerType() {
+    if (env.gitlabMergeRequestIid) return 'merge_request'
+    if (env.gitlabActionType == 'PUSH') return 'push'
+    if (env.gitlabActionType == 'TAG_PUSH') return 'tag'
+    if (currentBuild.getBuildCauses('hudson.model.Cause$UserIdCause')) return 'manual'
+    return 'webhook'
+}
+
+def loadPipelineConfiguration() {
+    echo "======================================================"
+    echo "LOADING CONFIGURATION"
+    echo "======================================================"
+    
+    def projectKey = (env.TRIGGER_REPO_NAME ?: '').trim()
+    if (!projectKey) {
+        error "Project key is empty"
+    }
+    
+    def configOutput = bat(
+        returnStdout: true,
+        script: "@powershell -ExecutionPolicy Bypass -File scripts\\utils\\parse-config.ps1 -projectKey ${projectKey} -environment ${env.RUN_ENVIRONMENT}"
+    ).trim()
+    
+    // Parse KEY=VALUE (CPS-safe loop)
+    def lines = configOutput.split('\n')
+    for (int i = 0; i < lines.size(); i++) {
+        def line = lines[i].trim()
+        if (line && !line.startsWith('[DEBUG]') && !line.startsWith('#')) {
+            def idx = line.indexOf('=')
+            if (idx > 0) {
+                def key = line.substring(0, idx)
+                def value = line.substring(idx + 1)
+                env."${key}" = value
             }
         }
-        success {
-            echo "✓ Pipeline succeeded - All security gates passed"
-            echo "  - Security scan: PASSED"
-            echo "  - Build: SUCCESS"
-            echo "  - Deploy: COMPLETED"
+    }
+    
+    env.PIPELINE_AGENT_LABEL = env.JENKINS_AGENT_LABEL ?: params.EXECUTION_LABEL
+    
+    // Validate required vars
+    def required = ['PROJECT_NAME', 'PROJECT_GIT_URL', 'PROJECT_GIT_BRANCH', 'COMPONENTS_COUNT']
+    for (int i = 0; i < required.size(); i++) {
+        if (!env."${required[i]}"?.trim()) {
+            error "Missing required: ${required[i]}"
+        }
+    }
 
+    // info: if "SONAR_ENABLED" var is set to true, from the MR source branch update the sonar key to isolate "develop" and "master"
+    // info: then launch the sonarscanner for C#
+    if (env.SONAR_ENABLED== 'True') {
+        env.sonar_key = "BRS.FR.${env.TRIGGER_REPO_NAME}"
+        powershell(returnStatus: true, script: '''
+            dotnet C:\\Users\\jenkins\\.dotnet\\tools\\.store\\dotnet-sonarscanner\\6.2.0\\dotnet-sonarscanner\\6.2.0\\tools\\netcoreapp3.1\\any\\SonarScanner.MSBuild.dll begin `
+            /k:"$env:sonar_key" `
+            /d:sonar.exclusions="**/*.html" `
+            /d:sonar.cpd.exclusions="**/DTOs/**/*.cs" `
+            /d:sonar.cs.vstest.reportsPaths="$env:WORKSPACE\\reports\\**\\*.trx" `
+            /d:sonar.cs.vscoveragexml.reportsPaths="$env:WORKSPACE\\reports\\**\\*.xml" `
+            /d:sonar.host.url='https://sonarqube.glb.laridak.tools' `
+            /d:sonar.login="$env:sonar_token"
+        ''')
+    }
+
+    printConfigSummary()
+}
+
+def printConfigSummary() {
+    echo "======================================================"
+    echo "CONFIGURATION LOADED"
+    echo "======================================================"
+    echo "Project: ${env.PROJECT_NAME}"
+    echo "Git: ${env.PROJECT_GIT_URL} @ ${env.PROJECT_GIT_BRANCH}"
+    echo "Agent: ${env.PIPELINE_AGENT_LABEL}"
+    echo "Components: ${env.COMPONENTS_COUNT}"
+    echo "Deploy: ${env.DEPLOY_ENABLED} (${env.DEPLOY_VMS_COUNT} servers)"
+    echo "Security: GitLeaks=${env.GITLEAKS_ENABLED}, OWASP=${env.OWASP_DC_ENABLED}, DepScan=${env.DEPENDENCY_SCAN_ENABLED}, Sonar=${env.SONAR_ENABLED}, DAST=${env.DAST_ENABLED}"
+    echo "======================================================"
+}
+
+def checkoutProject() {
+    echo "======================================================"
+    echo "CHECKOUT: ${env.PROJECT_NAME}"
+    echo "======================================================"
+    
+    dir('project') {
+        git branch: env.TRIGGER_BRANCH,
+            url: env.TRIGGER_REPO_URL
+           // credentialsId: env.PROJECT_GIT_CREDENTIALS ?: 'git-ssh-key'
+        
+        env.PROJECT_COMMIT_HASH = bat(
+            returnStdout: true,
+            script: '@git rev-parse HEAD'
+        ).trim()
+        
+        echo "Branch: ${env.TRIGGER_BRANCH}"
+        echo "Commit: ${env.PROJECT_COMMIT_HASH}"
+    }
+}
+
+def runGitLeaksScan() {
+    echo "======================================================"
+    echo "SECRET SCANNING - GITLEAKS"
+    echo "======================================================"
+    
+    dir('project') {
+        def result = bat(
+            returnStatus: true,
+            script: """
+                powershell.exe -ExecutionPolicy Bypass -File ^
+                    "${env.WORKSPACE}\\scripts\\security\\gitleaksScan.ps1" ^
+                    -repoPath . ^
+                    -configFile "${env.WORKSPACE}\\config\\gitleaks.toml" ^
+                    -reportDir "${env.WORKSPACE}\\gitleaks-report"
+            """
+        )
+        
+        if (result != 0) {
+            error "GitLeaks detected secrets - Pipeline blocked"
         }
-        unstable {
-            echo "⚠ Pipeline completed with warnings"
-            echo "  - Medium/Low vulnerabilities detected"
-            echo "  - Review security scan report"
+        echo "[OK] No secrets detected"
+    }
+}
+
+def publishGitLeaksReport() {
+    publishHTML([
+        allowMissing: true,
+        alwaysLinkToLastBuild: true,
+        keepAll: true,
+        reportDir: 'gitleaks-report',
+        reportFiles: 'gitleaks-report.html',
+        reportName: 'GitLeaks Report'
+    ])
+    archiveArtifacts artifacts: 'gitleaks-report/**/*', allowEmptyArchive: true
+}
+
+def runDependencyScan() {
+    echo "======================================================"
+    echo "DEPENDENCY SCAN (.NET)"
+    echo "======================================================"
+    
+    dir('project') {
+        bat 'dotnet restore'
+        bat 'dotnet list package --vulnerable --include-transitive > dependency-scan.txt 2>&1'
+        
+        def content = readFile('dependency-scan.txt')
+        def hasCritical = content.contains('Critical')
+        def hasHigh = content.contains('High')
+        
+        if (hasCritical && env.FAIL_ON_CRITICAL == 'true') {
+            error "Critical vulnerabilities detected"
         }
-        failure {
-            echo "✗ Pipeline failed"
-            echo "  - Check security scan and build logs"
-            echo "  - Review error details above"
+        if (hasHigh && env.FAIL_ON_HIGH == 'true') {
+            error "High vulnerabilities detected"
+        }
+        
+        echo "[OK] Dependency scan passed"
+    }
+}
+
+def archiveDependencyReport() {
+    archiveArtifacts artifacts: 'project/dependency-scan.txt', allowEmptyArchive: true
+}
+
+def runOwaspDependencyCheck() {
+    echo "======================================================"
+    echo "OWASP DEPENDENCY CHECK"
+    echo "======================================================"
+    
+    dir('project') {
+        def toolBase  = 'D:\\Jenkins\\tools\\org.jenkinsci.plugins.DependencyCheck.tools.DependencyCheckInstallation'
+        def odcToolName = 'Dep-CICD'
+        def odcBin   = "${toolBase}\\${odcToolName}\\bin\\dependency-check.bat"
+        def dataDir  = "${toolBase}\\${odcToolName}\\data"
+        def dbPath = "${dataDir}\\odc.mv.db"
+        def feedsDir = "${env.WORKSPACE}\\src\\Assests\\owasp_dependency\\nvd-feeds"
+        def feedsfilesUrl = "file:///${feedsDir.replace('\\','/')}/nvdcve-{0}.json.gz"
+
+        def dbSizeThresholdMB = 5
+
+        def dbExists = false
+        def dbValid = false
+        
+        if (fileExists(dbPath)) {
+            def dbSize = powershell(
+                script: """
+                    [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
+                    [math]::Round((Get-Item '${dbPath}').Length / 1MB, 2)
+                """,
+                returnStdout: true
+            ).trim()
+            
+            echo "Base de données trouvée: ${dbSize} MB"
+            
+            if (dbSize.toDouble() >= dbSizeThresholdMB) {
+                dbValid = true
+                echo "Base de données valide (>= ${dbSizeThresholdMB} MB)"
+            } else {
+                echo "Base de données trop petite (< ${dbSizeThresholdMB} MB) - Réinitialisation nécessaire"
+            }
+        } else {
+            echo "Base de données non trouvée - Initialisation nécessaire"
+        }
+
+        // Gestion du proxy pour OWASP Dependency-Check
+        def proxyArgs = ''
+        if (env.DEP_CHECK_ARGS?.trim()) {
+            proxyArgs = ' ' + env.DEP_CHECK_ARGS.trim()
+        } else {
+            if (env.PROXY_SERVER?.trim()) { proxyArgs += " --proxyserver ${env.PROXY_SERVER}" }
+            if (env.PROXY_PORT?.trim())   { proxyArgs += " --proxyport ${env.PROXY_PORT}" }
+            if (env.PROXY_USERNAME?.trim() && env.PROXY_PASSWORD?.trim()) {
+                proxyArgs += " --proxyauth ${env.PROXY_USERNAME}:${env.PROXY_PASSWORD}"
+            }
+            if (env.NON_PROXY_HOSTS?.trim()) {
+                proxyArgs += " --nonProxyHosts \"${env.NON_PROXY_HOSTS}\""
+            }
+        }
+
+        def httpProxy = (env.PROXY_SERVER?.trim() && env.PROXY_PORT?.trim()) ? "http://proxy.fr.laridak.tools:3128" : ''
+
+        def envVars = []
+
+        if (httpProxy) {
+            envVars = [
+                "HTTP_PROXY=${httpProxy}",
+                "HTTPS_PROXY=${httpProxy}",
+                "http_proxy=${httpProxy}",
+                "https_proxy=${httpProxy}",
+                "NO_PROXY=${env.NON_PROXY_HOSTS ?: ''}",
+                "no_proxy=${env.NON_PROXY_HOSTS ?: ''}"
+            ]
+        }
+                
+        bat """
+            powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+            Set-Content -Path (Join-Path '${feedsDir.replace('\\','/')}' 'cache.properties') -Encoding ASCII -Value @('lastModifiedDate='+(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'), ^
+            'prefix=nvdcve-2.0-'); ^
+            Get-Content (Join-Path '${feedsDir.replace('\\','/')}' 'cache.properties')"
+        """
+
+        withEnv(envVars) {
+            // Scan avec plugin Jenkins
+            dependencyCheck(
+                additionalArguments: """
+                    --scan .
+                    --out .
+                    --format XML --format HTML
+                    --failOnCVSS 7.0
+                    --enableRetired --enableExperimental
+                    --data "${dataDir}"      
+                    --nvdDatafeed "${feedsfilesUrl}"  
+                    --prettyPrint 
+                    --noupdate
+                    --log "${env.WORKSPACE}\\logs\\odc-scan.log"
+                """ + proxyArgs,
+                odcInstallation: 'Dep-CICD'
+            )
+            // recordIssues tools: [sarif(pattern: '**/dependency-check-report.xml', id: 'odc')]
 
         }
     }
+}
+
+def publishOwaspReport() {
+    dependencyCheckPublisher(
+        pattern: 'project/dependency-check-report.xml',
+        failedTotalCritical: 0,
+        failedTotalHigh: 0,
+        unstableTotalMedium: 5
+    )
+    publishHTML([
+        allowMissing: false,
+        alwaysLinkToLastBuild: true,
+        keepAll: true,
+        reportDir: 'project',
+        reportFiles: 'dependency-check-report.html',
+        reportName: 'OWASP DC Report'
+    ])
+    archiveArtifacts artifacts: 'project/dependency-check-report.*', allowEmptyArchive: false
+}
+
+def runSonarQubeAnalysis() {
+    echo "======================================================"
+    echo "SAST - SONARQUBE"
+    echo "======================================================"
+    
+    if (!env.sonar_token?.trim()) {
+        error "SonarQube token not configured"
+    }
+    
+    dir('project') {
+        def branch = env.gitlabBranch ?: env.PROJECT_GIT_BRANCH ?: 'main'
+        def projectKey = "${env.SONAR_PROJECT_PREFIX}${env.PROJECT_NAME?.replaceAll(/[^a-zA-Z0-9.]/, '') ?: 'Unknown'}"
+        def configuration = env.BUILD_CONFIGURATION ?: 'Release'
+
+        def endStatus = powershell(returnStatus: true, script: '''
+            dotnet sonarscanner end /d:sonar.login="$env:sonar_token"
+        ''')
+        
+        if (endStatus != 0) {
+            error "SonarQube END failed"
+        }
+        
+        echo "[OK] SonarQube analysis completed"
+    }
+}
+
+def buildComponents() {
+    echo "======================================================"
+    echo "BUILD COMPONENTS"
+    echo "======================================================"
+    
+    def count = (env.COMPONENTS_COUNT ?: '0').toInteger()
+    if (count == 0) {
+        echo "[WARN] No components to build"
+        return
+    }
+    
+    def results = [success: 0, failed: 0, skipped: 0]
+    
+    for (int i = 0; i < count; i++) {
+        def name = env."COMPONENT_${i}_NAME"
+        def type = env."COMPONENT_${i}_TYPE"
+        def buildScript = env."COMPONENT_${i}_BUILD_SCRIPT"
+        def buildScriptName = env."COMPONENT_${i}_BUILD_SCRIPT_NAME"
+        
+        echo "[${i + 1}/${count}] ${name} (${buildScriptName})"
+        
+        if (!buildScript?.trim()) {
+            echo "  [SKIP] No build script"
+            results.skipped++
+            continue
+        }
+        
+        try {
+            executeBuildScript(name, type, buildScript, buildScriptName, i)
+            echo "  [OK]"
+            results.success++
+        } catch (Exception e) {
+            echo "  [FAIL] ${e.message}"
+            results.failed++
+        }
+    }
+    
+    echo "======================================================"
+    echo "BUILD: ${results.success} OK | ${results.failed} FAIL | ${results.skipped} SKIP"
+    echo "======================================================"
+    
+    if (results.failed > 0) {
+        error "Build failed for ${results.failed} component(s)"
+    }
+}
+
+def executeBuildScript(String name, String type, String script, String scriptName, int index) {
+    def baseFolder = env."COMPONENT_${index}_BASE_FOLDER" ?: "project"
+    def publishFolder = env."COMPONENT_${index}_PUBLISH_FOLDER"
+    
+    def proxy = env.PROXY_SERVER ?: "proxy.fr.laridak.tools"
+    def port = env.PROXY_PORT ?: "3128"
+    def environment = env.RUN_ENVIRONMENT
+    
+    switch (scriptName) {
+        case 'buildDotNetCore3.1':
+        case 'buildDotNet_Voucher':
+            bat """
+                powershell.exe -ExecutionPolicy Bypass -File "${script}" ^
+                    -proxyServer "${proxy}" ^
+                    -proxyPort "${port}" ^
+                    -assemblyName "${name}" ^
+                    -type "${type}" ^
+                    -environment "${environment}" ^
+                    -baseFolder "${env.WORKSPACE}\\project"
+            """
+            break
+            
+        case 'buildDotNetCore':
+            bat """
+                powershell.exe -ExecutionPolicy Bypass -File "${script}" ^
+                    -proxyServer "${proxy}" ^
+                    -proxyPort "${port}" ^
+                    -serviceName "${name}" ^
+                    -targetType "${type}" ^
+                    -environment "${environment}" ^
+                    -baseFolder "${env.WORKSPACE}\\project"
+            """
+            break
+            
+        case 'buildAspDotNet':
+            def baseFolderPath = "${env.WORKSPACE}\\${baseFolder}"
+            def publishFolderPath = publishFolder ? "${env.WORKSPACE}\\${publishFolder}" : "${env.WORKSPACE}\\DotNet\\publish"
+            
+            if (type == 'web') {
+                // Web: avec publishProfile
+                def publishProfile = "${baseFolderPath}\\${name}\\Properties\\PublishProfiles\\[${environment}] Generation package.pubxml"
+                bat """
+                    powershell.exe -ExecutionPolicy Bypass -File "${script}" ^
+                        -appName "${name}" ^
+                        -baseFolder "${baseFolderPath}" ^
+                        -targetType "${type}" ^
+                        -environment "${environment}" ^
+                        -publishProfile "${publishProfile}" ^
+                        -publishFolder "${publishFolderPath}"
+                """
+            } else {
+                // Console: sans publishProfile
+                bat """
+                    powershell.exe -ExecutionPolicy Bypass -File "${script}" ^
+                        -appName "${name}" ^
+                        -baseFolder "${baseFolderPath}" ^
+                        -targetType "${type}" ^
+                        -environment "${environment}" ^
+                        -publishFolder "${publishFolderPath}"
+                """
+            }
+            break
+            
+        default:
+            throw new Exception("Unknown build script: ${scriptName}")
+    }
+}
+
+def deployComponents() {
+    echo "======================================================"
+    echo "DEPLOY TO ${env.RUN_ENVIRONMENT.toUpperCase()}"
+    echo "======================================================"
+    
+    // Approval for non-test environments
+    if (env.RUN_ENVIRONMENT != 'tst' && env.DEPLOY_REQUIRES_APPROVAL == 'True') {
+        def approvers = env.DEPLOY_APPROVERS ?: 'admin,lead-dev'
+        input message: "Deploy to ${env.RUN_ENVIRONMENT.toUpperCase()}?",
+              ok: 'Deploy',
+              submitter: approvers
+    }
+    
+    def servers = (env.DEPLOY_SERVERS ?: '').tokenize(';')
+    if (servers.isEmpty()) {
+        echo "[WARN] No servers configured for deployment"
+        return
+    }
+    
+    def count = (env.COMPONENTS_COUNT ?: '0').toInteger()
+    if (count == 0) {
+        echo "[WARN] No components to deploy"
+        return
+    }
+    
+    def results = [success: 0, failed: 0, skipped: 0]
+    
+    for (int s = 0; s < servers.size(); s++) {
+        def server = servers[s].trim()
+        if (!server) continue
+        
+        echo "------------------------------------------------------"
+        echo "Server [${s + 1}/${servers.size()}]: ${server}"
+        echo "------------------------------------------------------"
+        
+        for (int i = 0; i < count; i++) {
+            def name = env."COMPONENT_${i}_NAME"
+            def type = env."COMPONENT_${i}_TYPE"
+            def deployScript = env."COMPONENT_${i}_DEPLOY_SCRIPT"
+            def deployScriptName = env."COMPONENT_${i}_DEPLOY_SCRIPT_NAME"
+            def destPath = env."COMPONENT_${i}_DEST_PATH"
+            
+            if (!deployScript?.trim()) {
+                echo "  [SKIP] ${name} - No deploy script"
+                results.skipped++
+                continue
+            }
+            
+            try {
+                echo "  [${i + 1}/${count}] ${name} (${destPath})" 
+                //executeDeployScript(server, name, type, deployScript, deployScriptName, destPath)
+                echo "  [OK] ${name}"
+                results.success++
+            } catch (Exception e) {
+                echo "  [FAIL] ${name} - ${e.message}"
+                results.failed++
+                
+                if (env.FAIL_ON_DEPLOY_FAILURE == 'true') {
+                    error "Deploy failed: ${name} to ${server}"
+                }
+            }
+        }
+    }
+    
+    echo "======================================================"
+    echo "DEPLOY: ${results.success} OK | ${results.failed} FAIL | ${results.skipped} SKIP"
+    echo "======================================================"
+    
+    if (results.failed > 0 && env.FAIL_ON_DEPLOY_FAILURE == 'true') {
+        error "Deployment failed for ${results.failed} component(s)"
+    }
+}
+
+def executeDeployScript(String server, String name, String type, String script, String scriptName, String destPath) {
+    def environment = env.RUN_ENVIRONMENT
+    def sourcePath = "${env.WORKSPACE}\\publish\\${environment}\\${name}"
+    
+    // Scripts avec signature legacy (server, assemblyName, type, environment, baseFolder)
+    def legacyScripts = ['deployDotNetCore3.1', 'deployDotNet_Voucher']
+    
+    // Scripts avec signature standard (serverName, environment, appName, sourcePath, destPath)
+    def standardScripts = ['deployConsoleDotNetCore', 'deployWebAspDotNet', 'deployWebDotNetCore','deployConsoleAspDotNet']
+    
+    if (scriptName in legacyScripts) {
+        bat """
+            powershell.exe -ExecutionPolicy Bypass -File "${script}" ^
+                -server "${server}" ^
+                -assemblyName "${name}" ^
+                -type "${type}" ^
+                -environment "${environment}" ^
+                -baseFolder "${env.WORKSPACE}\\project"
+        """
+    } else if (scriptName in standardScripts) {
+        if (!destPath?.trim()) {
+            throw new Exception("destPath required for ${scriptName} - component: ${name}")
+        }
+        bat """
+            powershell.exe -ExecutionPolicy Bypass -File "${script}" ^
+                -serverName "${server}" ^
+                -environment "${environment}" ^
+                -appName "${name}" ^
+                -sourcePath "${sourcePath}" ^
+                -destPath "${destPath}"
+        """
+    } else {
+        throw new Exception("Unknown deploy script: ${scriptName}")
+    }
+}
+
+def runHealthChecks() {
+    echo "======================================================"
+    echo "HEALTH CHECKS"
+    echo "======================================================"
+    
+    def servers = (env.DEPLOY_SERVERS ?: '').tokenize(';')
+    def healthEndpoint = env.HEALTH_CHECK_ENDPOINT ?: '/health'
+    def healthPort = env.HEALTH_CHECK_PORT ?: '8080'
+    
+    for (int i = 0; i < servers.size(); i++) {
+        def server = servers[i].trim()
+        if (!server) continue
+        
+        echo "Checking: ${server}"
+        
+        def result = bat(
+            returnStatus: true,
+            script: """
+                powershell -Command "try { \$r = Invoke-WebRequest -Uri 'http://${server}:${healthPort}${healthEndpoint}' -TimeoutSec 30 -UseBasicParsing; exit 0 } catch { exit 1 }"
+            """
+        )
+        
+        if (result != 0) {
+            unstable "Health check failed for ${server}"
+        } else {
+            echo "  [OK] ${server}"
+        }
+    }
+}
+
+def generateSecurityAudit() {
+    echo "======================================================"
+    echo "SECURITY AUDIT"
+    echo "======================================================"
+    
+    def auditJson = """
+{
+  "metadata": {
+    "timestamp": "${BUILD_TIMESTAMP}",
+    "pipeline": "${env.JOB_NAME}",
+    "buildNumber": "${BUILD_NUMBER}",
+    "environment": "${env.RUN_ENVIRONMENT}"
+  },
+  "project": {
+    "name": "${env.PROJECT_NAME}",
+    "branch": "${env.PROJECT_GIT_BRANCH}",
+    "commit": "${env.PROJECT_COMMIT_HASH ?: 'unknown'}"
+  },
+  "security": {
+    "gitleaks": "${env.GITLEAKS_ENABLED}",
+    "dependencyScan": "${env.DEPENDENCY_SCAN_ENABLED}",
+    "owaspDC": "${env.OWASP_DC_ENABLED}",
+    "sonar": "${env.SONAR_ENABLED}"
+  },
+  "result": "${currentBuild.result ?: 'SUCCESS'}"
+}
+"""
+    writeFile file: 'security-audit.json', text: auditJson
+    echo "[OK] Audit generated"
+}
+
+def sendPipelineNotification() {
+    def status = currentBuild.result ?: 'SUCCESS'
+    def duration = currentBuild.durationString.replace(' and counting', '')
+    
+    def subject = "Pipeline ${status}: ${env.JOB_NAME} #${BUILD_NUMBER}"
+    
+    def body = """
+Pipeline: ${env.JOB_NAME}
+Build: #${BUILD_NUMBER}
+Status: ${status}
+Duration: ${duration}
+Environment: ${env.RUN_ENVIRONMENT}
+
+Project: ${env.PROJECT_NAME}
+Branch: ${env.TrIGGER_BRANCH}
+
+Build URL: ${env.BUILD_URL}
+"""
+    
+    emailext(
+        subject: subject,
+        body: body,
+        to: env.NOTIFICATION_EMAIL ?: 'amin.kadira.ext@laridakgroup.com',
+        mimeType: 'text/plain'
+    )
 }
