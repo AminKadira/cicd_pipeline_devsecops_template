@@ -1,0 +1,195 @@
+{
+    "$schema": "../templates/project-schema.json",
+    "description": "DevSecOps Pipeline V2 - .NET Core Module with multiple component types",
+    "project": {
+        "name": "dotnet-core-module",
+        "triggerRepoPattern": "^core_module/dotnet.*$",
+        "stack": "dotnet",
+        "version": "2.0.0",
+        "gitUrl": "git@gitlab.fr.pluxee.tools:core_module/dotnet.git",
+        "gitBranch": "release/cicd",
+        "gitCredentials": "git-ssh-key"
+    },
+    "agent": {
+        "os": "windows",
+        "label": "plxfrsr-l1pi027",
+        "fallbackLabel": "windows-dotnet"
+    },
+    "build": {
+        "proxy": {
+            "server": "proxy.fr.pluxee.tools",
+            "port": "3128"
+        },
+        "defaultBaseFolder": "${WORKSPACE}",
+        "publishFolder": "${WORKSPACE}\\publish"
+    },
+    "components": {
+        "apis": [
+            {
+                "name": "Ssmf.CoreModule.Api.CmApi",
+                "enabled": true,
+                "script": "D:\\_puppet\\script\\buildAspDotNet.ps1",
+                "deployScript": "D:\\_puppet\\script\\deployWebAspDotNet.ps1",
+                "params": {
+                    "targetType": "web",
+                    "baseFolder": "${WORKSPACE}\\DotNet",
+                    "publishProfile": "${WORKSPACE}\\DotNet\\${component.name}\\Properties\\PublishProfiles\\[${environment}] Generation package.pubxml",
+                    "publishFolder": "${WORKSPACE}\\DotNet\\publish"
+                },
+                "deployParams": {
+                    "sourcePath": "${WORKSPACE}\\DotNet\\publish\\${environment}\\${component.name}",
+                    "destPath": "d:\\www\\api-coremodule"
+                }
+            }
+        ],
+        "webApps": [
+            {
+                "name": "Ssmf.CoreModule.Hosting.Wcf",
+                "enabled": true,
+                "script": "D:\\_puppet\\script\\buildAspDotNet.ps1",
+                "deployScript": "D:\\_puppet\\script\\deployWebAspDotNet.ps1",
+                "params": {
+                    "targetType": "web",
+                    "baseFolder": "${WORKSPACE}\\DotNet\\SSMF.CoreModule.Host",
+                    "publishProfile": "${WORKSPACE}\\DotNet\\SSMF.CoreModule.Host\\${component.name}\\Properties\\PublishProfiles\\[${environment}] Generation package.pubxml",
+                    "publishFolder": "${WORKSPACE}\\DotNet\\publish"
+                },
+                "deployParams": {
+                    "appPoolName": "Ssmf.CoreModule.Hosting.Wcf",
+                    "sourcePath": "${WORKSPACE}\\DotNet\\publish\\${environment}\\${component.name}",
+                    "destPath": "d:\\www\\coremodule\\CoreModuleServices"
+                }
+            }
+        ],
+        "consoleServices": [
+            {
+                "name": "Ssmf.CoreModule.Listener.Service",
+                "enabled": true,
+                "script": "D:\\_puppet\\script\\buildAspDotNet.ps1",
+                "deployScript": "D:\\_puppet\\script\\deployConsoleService.ps1",
+                "params": {
+                    "targetType": "console",
+                    "baseFolder": "${WORKSPACE}\\DotNet\\SSMF.CoreModule.Listener",
+                    "publishFolder": "${WORKSPACE}\\DotNet\\publish"
+                },
+                "deployParams": {
+                    "serviceName": "CoreModuleListener",
+                    "sourcePath": "${WORKSPACE}\\DotNet\\publish\\${environment}\\${component.name}",
+                    "destPath": "d:\\services\\coremodule-listener",
+                    "stopService": true,
+                    "startService": true
+                }
+            },
+            {
+                "name": "Ssmf.CoreModule.Scheduler.Service",
+                "enabled": true,
+                "script": "D:\\_puppet\\script\\buildAspDotNet.ps1",
+                "deployScript": "D:\\_puppet\\script\\deployConsoleService.ps1",
+                "params": {
+                    "targetType": "console",
+                    "baseFolder": "${WORKSPACE}\\DotNet\\SSMF.CoreModule.Scheduler",
+                    "publishFolder": "${WORKSPACE}\\DotNet\\publish"
+                },
+                "deployParams": {
+                    "serviceName": "CoreModuleScheduler",
+                    "sourcePath": "${WORKSPACE}\\DotNet\\publish\\${environment}\\${component.name}",
+                    "destPath": "d:\\services\\coremodule-scheduler",
+                    "stopService": true,
+                    "startService": true
+                }
+            }
+        ],
+        "batches": [],
+        "angular": [],
+        "dbScripts": []
+    },
+    "security": {
+        "gitleaks": {
+            "enabled": true,
+            "configFile": "config/gitleaks.toml",
+            "failOnSecrets": true
+        },
+        "owaspDC": {
+            "enabled": true,
+            "failOnCVSS": 7.0,
+            "suppressionFile": "config/suppression-owasp.xml"
+        },
+        "sonar": {
+            "enabled": true,
+            "projectKey": "BRS.FR.dotnet-core-module"
+        },
+        "dependencyScan": {
+            "enabled": true,
+            "failOnCritical": true,
+            "failOnHigh": true,
+            "failOnMedium": false
+        }
+    },
+    "environments": [
+        {
+            "name": "tst",
+            "displayName": "Test",
+            "autoDeploy": true,
+            "approvalRequired": false,
+            "targetServers": ["plxfrsr-l2ta015"]
+        },
+        {
+            "name": "sta",
+            "displayName": "Staging",
+            "autoDeploy": true,
+            "approvalRequired": true,
+            "targetServers": [
+                "plxfrsr-l1sac91",
+                "plxfrsr-l1sac92",
+                "plxfrsr-l1sac93",
+                "plxfrsr-l1sac94"
+            ]
+        },
+        {
+            "name": "prd",
+            "displayName": "Production",
+            "autoDeploy": false,
+            "approvalRequired": true,
+            "jenkinsAgent": "plxfrsr-l1pi008",
+            "targetServers": [
+                "plxfrsr-l1pab41",
+                "plxfrsr-l1pab42",
+                "plxfrsr-l1pab43",
+                "plxfrsr-l1pab44",
+                "plxfrsr-l2ra015"
+            ]
+        }
+    ],
+    "deploy": {
+        "strategy": "rolling",
+        "healthCheck": {
+            "enabled": true,
+            "endpoint": "/health",
+            "timeout": 120
+        },
+        "rollback": {
+            "enabled": true,
+            "onFailure": true
+        }
+    },
+    "notifications": {
+        "devteam": [
+            "oussama.kassoui@pluxeegroup.com",
+            "younes.chabchi@pluxeegroup.com",
+            "adrien.blondel@pluxeegroup.com",
+            "fabrice.saussaye@pluxeegroup.com"
+        ],
+        "qateam": [
+            "amin.kadira.ext@pluxeegroup.com",
+            "jeanmichel.robert@pluxeegroup.com"
+        ],
+        "securityTeam": []
+    },
+    "logging": {
+        "level": "INFO",
+        "retention": {
+            "builds": 30,
+            "daysToKeep": 90
+        }
+    }
+}

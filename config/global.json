@@ -1,0 +1,140 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "framework": {
+      "version": "2.0.0",
+      "name": "pluxee-devsecops-pipeline",
+      "description": "Config-driven DevSecOps pipeline framework"
+    },
+    "proxy": {
+      "server": "proxy.fr.pluxee.tools",
+      "port": 3128,
+      "enabled": true,
+      "noProxy": ["localhost", "127.0.0.1", "*.pluxee.tools", "10.*"]
+    },
+    "tools": {
+      "windows": {
+        "gitleaks": {
+          "path": "C:\\tools\\gitleaks\\gitleaks.exe",
+          "version": "8.21.2",
+          "configPath": "config/gitleaks.toml"
+        },
+        "sonarscanner": {
+          "path": "C:\\Users\\jenkins\\.dotnet\\tools\\.store\\dotnet-sonarscanner\\6.2.0\\dotnet-sonarscanner\\6.2.0\\tools\\netcoreapp3.1\\any\\SonarScanner.MSBuild.dll",
+          "version": "6.2.0"
+        },
+        "dependencyCheck": {
+          "path": "D:\\Jenkins\\tools\\org.jenkinsci.plugins.DependencyCheck.tools.DependencyCheckInstallation\\Dep-CICD\\bin\\dependency-check.bat",
+          "dataDir": "D:\\Jenkins\\tools\\org.jenkinsci.plugins.DependencyCheck.tools.DependencyCheckInstallation\\Dep-CICD\\data",
+          "version": "10.0+"
+        },
+        "dotnet": {
+          "path": "dotnet",
+          "sdkVersions": ["3.1", "6.0", "8.0"]
+        },
+        "powershell": {
+          "path": "pwsh",
+          "minVersion": "7.0"
+        }
+      },
+      "linux": {
+        "gitleaks": {
+          "path": "/opt/tools/gitleaks/gitleaks",
+          "version": "8.21.2",
+          "configPath": "config/gitleaks.toml"
+        },
+        "sonarscanner": {
+          "path": "/opt/sonar-scanner/bin/sonar-scanner",
+          "version": "5.0+"
+        },
+        "dependencyCheck": {
+          "path": "/opt/dependency-check/bin/dependency-check.sh",
+          "dataDir": "/opt/dependency-check/data",
+          "version": "10.0+"
+        },
+        "node": {
+          "path": "node",
+          "minVersion": "20.0"
+        },
+        "java": {
+          "path": "java",
+          "minVersion": "17"
+        }
+      }
+    },
+    "services": {
+      "sonarqube": {
+        "url": "https://sonarqube.glb.pluxee.tools",
+        "credentialsId": "sonar-token",
+        "projectKeyPrefix": "BRS.FR.",
+        "qualityGateTimeout": 300
+      },
+      "gitlab": {
+        "url": "https://gitlab.fr.pluxee.tools",
+        "credentialsId": "git-ssh-key",
+        "apiCredentialsId": "gitlab-api-token"
+      },
+      "nexus": {
+        "url": "https://nexus.fr.pluxee.tools",
+        "credentialsId": "nexus-credentials",
+        "repositories": {
+          "nuget": "nuget-hosted",
+          "npm": "npm-hosted",
+          "maven": "maven-releases"
+        }
+      }
+    },
+    "defaults": {
+      "timeouts": {
+        "checkout": 10,
+        "build": 30,
+        "test": 60,
+        "security": 45,
+        "deploy": 20,
+        "healthCheck": 5
+      },
+      "retries": {
+        "checkout": 3,
+        "build": 1,
+        "deploy": 2,
+        "healthCheck": 5
+      },
+      "artifacts": {
+        "retention": {
+          "builds": 30,
+          "daysToKeep": 90
+        },
+        "fingerprint": true
+      }
+    },
+    "agents": {
+      "windows": {
+        "defaultLabel": "plxfrsr-l1pi027",
+        "fallbackLabel": "plxfrsr-l1pi008",
+        "sonarLabel": "plxfrsr-l1pi008",
+        "capabilities": ["dotnet", "powershell", "nuget"]
+      },
+      "linux": {
+        "defaultLabel": "linux-agent",
+        "fallbackLabel": "linux-docker",
+        "capabilities": ["java", "node", "docker", "bash"]
+      }
+    },
+    "notifications": {
+      "email": {
+        "enabled": true,
+        "defaultRecipients": ["devops@pluxeegroup.com"],
+        "onFailure": true,
+        "onSuccess": false,
+        "onUnstable": true
+      },
+      "teams": {
+        "enabled": false,
+        "webhookCredentialsId": "teams-webhook"
+      }
+    },
+    "logging": {
+      "level": "INFO",
+      "structured": true,
+      "timestampFormat": "yyyy-MM-dd'T'HH:mm:ss'Z'"
+    }
+  }

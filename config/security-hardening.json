@@ -1,0 +1,216 @@
+{
+    "version": "2.0.0",
+    "description": "Security hardening configuration for DevSecOps Pipeline",
+    
+    "secrets": {
+      "allowedSources": [
+        "jenkins-credentials",
+        "azure-keyvault"
+      ],
+      "scanPatterns": [
+        "password",
+        "token",
+        "key",
+        "secret",
+        "apikey",
+        "api_key",
+        "api-key",
+        "passphrase",
+        "credential",
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "AKIA[0-9A-Z]{16}",
+        "ghp_[0-9a-zA-Z]{36}",
+        "sk-[0-9a-zA-Z]{48}"
+      ],
+      "blockOnDetection": true,
+      "exemptFiles": [
+        "*.test.ps1",
+        "*.spec.js",
+        "**/fixtures/**",
+        "**/test-data/**"
+      ]
+    },
+    
+    "network": {
+      "requireTLS": true,
+      "minimumTLSVersion": "1.2",
+      "allowedDomains": [
+        "*.pluxee.tools",
+        "github.com",
+        "gitlab.fr.pluxee.tools",
+        "sonarqube.glb.pluxee.tools",
+        "api.github.com",
+        "registry.npmjs.org",
+        "pypi.org",
+        "nuget.org"
+      ],
+      "proxyRequired": true,
+      "proxyServer": "proxy.fr.pluxee.tools",
+      "proxyPort": 3128,
+      "proxyExceptions": [
+        "localhost",
+        "127.0.0.1",
+        "*.local"
+      ]
+    },
+    
+    "artifacts": {
+      "signatureRequired": {
+        "tst": false,
+        "sta": true,
+        "prd": true
+      },
+      "checksumAlgorithm": "SHA256",
+      "allowedFormats": [
+        "dll",
+        "exe",
+        "nupkg",
+        "jar",
+        "zip"
+      ],
+      "retentionDays": {
+        "tst": 7,
+        "sta": 30,
+        "prd": 365
+      }
+    },
+    
+    "logging": {
+      "maskPatterns": [
+        "password",
+        "token",
+        "secret",
+        "apikey",
+        "passphrase",
+        "credential",
+        "Authorization:\\s*Bearer\\s+[^\\s]+",
+        "api[_-]?key[\"':\\s]*[=:]\\s*[\"'][^\"']*[\"']"
+      ],
+      "auditRetentionDays": 365,
+      "sensitiveFields": [
+        "SONAR_TOKEN",
+        "GPG_PASSPHRASE",
+        "GPG_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AZURE_CLIENT_SECRET"
+      ],
+      "logLevel": {
+        "tst": "DEBUG",
+        "sta": "INFO",
+        "prd": "WARN"
+      }
+    },
+    
+    "inputs": {
+      "sanitizeParams": true,
+      "allowedParamPatterns": {
+        "ENVIRONMENT": "^(tst|sta|prd)$",
+        "EXECUTION_LABEL": "^[a-zA-Z0-9_-]+$",
+        "PROJECT_KEY": "^[a-zA-Z0-9._-]+$",
+        "BRANCH": "^[a-zA-Z0-9/_-]+$"
+      },
+      "maxParamLength": 200,
+      "blockSpecialChars": [
+        ";",
+        "|",
+        "&",
+        "$",
+        "`",
+        "<",
+        ">",
+        "\n",
+        "\r"
+      ]
+    },
+    
+    "timeouts": {
+      "pipeline": {
+        "value": 2,
+        "unit": "HOURS"
+      },
+      "stages": {
+        "checkout": {
+          "value": 10,
+          "unit": "MINUTES"
+        },
+        "build": {
+          "value": 30,
+          "unit": "MINUTES"
+        },
+        "securityScan": {
+          "value": 30,
+          "unit": "MINUTES"
+        },
+        "deploy": {
+          "value": 45,
+          "unit": "MINUTES"
+        },
+        "approval": {
+          "value": 24,
+          "unit": "HOURS"
+        }
+      }
+    },
+    
+    "compliance": {
+      "owasp": {
+        "enabled": true,
+        "version": "2021",
+        "mappings": [
+          "A01-BrokenAccessControl",
+          "A02-CryptographicFailures",
+          "A03-Injection",
+          "A04-InsecureDesign",
+          "A05-SecurityMisconfiguration",
+          "A06-VulnerableComponents",
+          "A07-AuthenticationFailures",
+          "A08-SoftwareIntegrityFailures",
+          "A09-SecurityLoggingFailures",
+          "A10-SSRF"
+        ]
+      },
+      "slsa": {
+        "enabled": true,
+        "level": 2,
+        "requirements": [
+          "build-provenance",
+          "tamper-resistant",
+          "hermetic-builds"
+        ]
+      },
+      "cis": {
+        "enabled": true,
+        "benchmark": "Jenkins-2.400",
+        "controls": [
+          "access-control",
+          "agent-security",
+          "credential-management",
+          "plugin-security"
+        ]
+      }
+    },
+    
+    "buildSecurity": {
+      "disableConcurrentBuilds": true,
+      "requireApproval": {
+        "sta": true,
+        "prd": true
+      },
+      "approvers": {
+        "sta": [
+          "lead-dev",
+          "tech-lead"
+        ],
+        "prd": [
+          "admin",
+          "release-manager"
+        ]
+      },
+      "buildRetention": {
+        "numToKeep": 30,
+        "daysToKeep": 90,
+        "artifactNumToKeep": 10
+      }
+    }
+  }

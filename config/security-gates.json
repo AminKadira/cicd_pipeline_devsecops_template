@@ -1,0 +1,125 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "version": "1.0.0",
+    "description": "Security gates configuration aligned with OWASP Top 10 2021",
+    "gates": {
+      "gitleaks": {
+        "id": "SEC-001",
+        "name": "Secret Scanning",
+        "tool": "GitLeaks",
+        "owaspMapping": ["A02", "A07"],
+        "action": "BLOCK",
+        "threshold": 0,
+        "description": "Blocks pipeline if any secrets are detected",
+        "remediation": "Remove secrets from code, rotate credentials, use Jenkins Credentials Store"
+      },
+      "owaspDependencyCheck": {
+        "id": "SEC-002",
+        "name": "Dependency Vulnerability Scan",
+        "tool": "OWASP Dependency-Check",
+        "owaspMapping": ["A06"],
+        "action": "BLOCK",
+        "cvssThreshold": 7.0,
+        "thresholds": {
+          "critical": 0,
+          "high": 0,
+          "medium": 5,
+          "low": 10
+        },
+        "suppressionFile": "config/suppression-owasp.xml",
+        "description": "Scans dependencies for known CVEs",
+        "remediation": "Update vulnerable packages, apply suppression for false positives"
+      },
+      "dotnetVulnerabilityCheck": {
+        "id": "SEC-003",
+        "name": ".NET Native Vulnerability Scan",
+        "tool": "dotnet list package --vulnerable",
+        "owaspMapping": ["A06"],
+        "action": "BLOCK",
+        "thresholds": {
+          "critical": 0,
+          "high": 0
+        },
+        "description": "Native .NET vulnerability detection",
+        "remediation": "Run 'dotnet outdated' and update packages"
+      },
+      "sonarqube": {
+        "id": "SEC-004",
+        "name": "Static Application Security Testing",
+        "tool": "SonarQube",
+        "owaspMapping": ["A03", "A04", "A05", "A08", "A10"],
+        "action": "WARN",
+        "qualityGate": "default",
+        "blockOnQualityGateFail": false,
+        "metrics": {
+          "securityHotspots": "REVIEW",
+          "vulnerabilities": "BLOCK",
+          "codeSmells": "WARN"
+        },
+        "description": "SAST analysis for code vulnerabilities",
+        "remediation": "Fix issues identified in SonarQube dashboard"
+      },
+      "owaspZap": {
+        "id": "SEC-005",
+        "name": "Dynamic Application Security Testing",
+        "tool": "OWASP ZAP",
+        "owaspMapping": ["A01", "A03", "A05", "A07"],
+        "action": "WARN",
+        "enabled": false,
+        "thresholds": {
+          "high": 0,
+          "medium": 3,
+          "low": 10
+        },
+        "description": "Runtime security testing against deployed application",
+        "remediation": "Fix runtime vulnerabilities before production deployment"
+      },
+      "configurationReview": {
+        "id": "SEC-006",
+        "name": "Security Configuration Review",
+        "tool": "Custom Scripts",
+        "owaspMapping": ["A05"],
+        "action": "WARN",
+        "checks": ["https_only", "cors_restrictive", "security_headers"],
+        "description": "Validates security configuration best practices"
+      }
+    },
+    "enforcement": {
+      "tst": {
+        "required": ["gitleaks"],
+        "optional": ["dotnetVulnerabilityCheck"],
+        "skippable": ["sonarqube", "owaspDependencyCheck"]
+      },
+      "sta": {
+        "required": ["gitleaks", "dotnetVulnerabilityCheck", "owaspDependencyCheck"],
+        "optional": ["sonarqube"],
+        "skippable": ["owaspZap"]
+      },
+      "prd": {
+        "required": ["gitleaks", "dotnetVulnerabilityCheck", "owaspDependencyCheck", "sonarqube"],
+        "optional": ["owaspZap", "configurationReview"],
+        "skippable": []
+      }
+    },
+    "bypass": {
+      "allowed": false,
+      "requiresApproval": true,
+      "approvers": ["security-team", "lead-dev"],
+      "maxBypassDuration": "24h",
+      "auditRequired": true,
+      "notifyOnBypass": ["security-alerts@pluxeegroup.com"]
+    },
+    "reporting": {
+      "generateHtml": true,
+      "generateJson": true,
+      "archiveReports": true,
+      "publishToJenkins": true,
+      "outputDir": "reports/security"
+    },
+    "exitCodes": {
+      "success": 0,
+      "failure": 1,
+      "warning": 2,
+      "skipped": 3
+    }
+  }

@@ -1,0 +1,219 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://pluxee.tools/schemas/pipeline-config-v2.json",
+    "title": "DevSecOps Pipeline Configuration V2",
+    "description": "Configuration schema for Pluxee DevSecOps pipeline with component-based structure",
+    "type": "object",
+    "required": ["project", "components"],
+    "properties": {
+        "project": {
+            "type": "object",
+            "required": ["name", "gitUrl"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Project name (without .git suffix)"
+                },
+                "triggerRepoPattern": {
+                    "type": "string",
+                    "description": "Regex pattern to match triggering repository"
+                },
+                "stack": {
+                    "type": "string",
+                    "enum": ["dotnet", "java", "php", "node", "angular", "sql"],
+                    "default": "dotnet"
+                },
+                "version": {
+                    "type": "string",
+                    "default": "1.0.0"
+                },
+                "gitUrl": {
+                    "type": "string",
+                    "pattern": "^(git@|https://)"
+                },
+                "gitBranch": {
+                    "type": "string",
+                    "default": "main"
+                },
+                "gitCredentials": {
+                    "type": "string",
+                    "default": "git-ssh-key"
+                }
+            }
+        },
+        "agent": {
+            "type": "object",
+            "properties": {
+                "os": {
+                    "type": "string",
+                    "enum": ["windows", "linux"],
+                    "default": "windows"
+                },
+                "label": {
+                    "type": "string",
+                    "description": "Jenkins agent label"
+                },
+                "fallbackLabel": {
+                    "type": "string"
+                }
+            }
+        },
+        "build": {
+            "type": "object",
+            "properties": {
+                "proxy": {
+                    "type": "object",
+                    "properties": {
+                        "server": { "type": "string" },
+                        "port": { "type": "string" }
+                    }
+                },
+                "defaultBaseFolder": {
+                    "type": "string",
+                    "description": "Supports ${WORKSPACE} variable"
+                },
+                "publishFolder": {
+                    "type": "string"
+                }
+            }
+        },
+        "components": {
+            "type": "object",
+            "description": "Component definitions by category",
+            "properties": {
+                "apis": { "$ref": "#/definitions/componentArray" },
+                "webApps": { "$ref": "#/definitions/componentArray" },
+                "consoleServices": { "$ref": "#/definitions/componentArray" },
+                "batches": { "$ref": "#/definitions/componentArray" },
+                "angular": { "$ref": "#/definitions/componentArray" },
+                "dbScripts": { "$ref": "#/definitions/componentArray" }
+            }
+        },
+        "security": {
+            "type": "object",
+            "properties": {
+                "gitleaks": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": { "type": "boolean", "default": true },
+                        "configFile": { "type": "string", "default": "config/gitleaks.toml" },
+                        "failOnSecrets": { "type": "boolean", "default": true }
+                    }
+                },
+                "owaspDC": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": { "type": "boolean", "default": true },
+                        "failOnCVSS": { "type": "number", "default": 7.0 },
+                        "suppressionFile": { "type": "string" }
+                    }
+                },
+                "sonar": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": { "type": "boolean", "default": false },
+                        "projectKey": { "type": "string" }
+                    }
+                },
+                "dependencyScan": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "failOnCritical": { "type": "boolean", "default": true },
+                        "failOnHigh": { "type": "boolean", "default": true },
+                        "failOnMedium": { "type": "boolean", "default": false }
+                    }
+                }
+            }
+        },
+        "environments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "enum": ["dev", "tst", "sta", "prd", "uat"]
+                    },
+                    "displayName": { "type": "string" },
+                    "autoDeploy": { "type": "boolean", "default": true },
+                    "approvalRequired": { "type": "boolean", "default": false },
+                    "jenkinsAgent": { "type": "string" },
+                    "targetServers": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    }
+                }
+            }
+        },
+        "deploy": {
+            "type": "object",
+            "properties": {
+                "strategy": {
+                    "type": "string",
+                    "enum": ["all-at-once", "rolling", "blue-green", "canary"],
+                    "default": "all-at-once"
+                },
+                "healthCheck": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "endpoint": { "type": "string" },
+                        "timeout": { "type": "integer" }
+                    }
+                },
+                "rollback": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "onFailure": { "type": "boolean" }
+                    }
+                }
+            }
+        },
+        "notifications": {
+            "type": "object",
+            "properties": {
+                "devteam": { "type": "array", "items": { "type": "string" } },
+                "qateam": { "type": "array", "items": { "type": "string" } },
+                "securityTeam": { "type": "array", "items": { "type": "string" } }
+            }
+        }
+    },
+    "definitions": {
+        "componentArray": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name", "script"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Component name (assembly name)"
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "default": true
+                    },
+                    "script": {
+                        "type": "string",
+                        "description": "Build script path"
+                    },
+                    "deployScript": {
+                        "type": "string",
+                        "description": "Deploy script path"
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Build script parameters. Supports ${WORKSPACE}, ${environment}, ${component.name}"
+                    },
+                    "deployParams": {
+                        "type": "object",
+                        "description": "Deploy script parameters. Supports ${WORKSPACE}, ${environment}, ${component.name}, ${server}"
+                    }
+                }
+            }
+        }
+    }
+}
